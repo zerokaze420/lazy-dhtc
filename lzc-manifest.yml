@@ -6,6 +6,7 @@ application:
 services:
   server:
     image: embed:app
+    network_mode: host
     binds:
       - /lzcapp/var/dhtcdb:/lzcapp/var/dhtcdb
     healthcheck:
