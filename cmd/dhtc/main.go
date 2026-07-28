@@ -130,7 +130,7 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 		log.Fatal().Msg("cluster token is required in worker mode")
 	}
 	queue := cluster.NewWorkerQueue(cfg.WorkerID, cfg.WorkerQueue, func(md dhtcclient.Metadata) {
-		cache.InfoHashCacheRemove(string(md.InfoHash))
+		cache.InfoHashCacheExpireAfter(string(md.InfoHash), 12*time.Hour)
 	})
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

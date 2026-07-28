@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/subtle"
 	dhtcclient "dhtc/dhtc-client"
@@ -119,7 +120,16 @@ func (q *WorkerQueue) Handler(token string, maxBatch int) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodGet:
-			_ = json.NewEncoder(w).Encode(q.Batch(maxBatch))
+			batch := q.Batch(maxBatch)
+			if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+				w.Header().Set("Content-Encoding", "gzip")
+				w.Header().Set("Vary", "Accept-Encoding")
+				writer := gzip.NewWriter(w)
+				defer writer.Close()
+				_ = json.NewEncoder(writer).Encode(batch)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(batch)
 		case http.MethodPost:
 			var ack Ack
 			if json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&ack) != nil {
@@ -251,23 +261,37 @@ func (p *MasterPuller) pull(ctx context.Context, worker string) error {
 }
 
 func (p *MasterPuller) pullWithToken(ctx context.Context, worker, token string) error {
+	const maxBatchesPerPull = 8
+	for batchNumber := 0; batchNumber < maxBatchesPerPull; batchNumber++ {
+		more, err := p.pullBatch(ctx, worker, token)
+		if err != nil {
+			return err
+		}
+		if !more {
+			return nil
+		}
+	}
+	return nil
+}
+
+func (p *MasterPuller) pullBatch(ctx context.Context, worker, token string) (bool, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, worker+QueuePath, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("worker returned %d", resp.StatusCode)
+		return false, fmt.Errorf("worker returned %d", resp.StatusCode)
 	}
 	var batch Batch
 	if err := json.NewDecoder(resp.Body).Decode(&batch); err != nil {
-		return err
+		return false, err
 	}
 	if len(batch.Items) == 0 {
 		p.recordSuccess(worker, batch, 0)
-		return nil
+		return false, nil
 	}
 	ids := make([]uint64, 0, len(batch.Items))
 	for _, item := range batch.Items {
@@ -283,15 +307,15 @@ func (p *MasterPuller) pullWithToken(ctx context.Context, worker, token string) 
 	ackReq.Header.Set("Content-Type", "application/json")
 	ackResp, err := p.client.Do(ackReq)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer ackResp.Body.Close()
 	if ackResp.StatusCode/100 != 2 {
-		return fmt.Errorf("worker ack returned %d", ackResp.StatusCode)
+		return false, fmt.Errorf("worker ack returned %d", ackResp.StatusCode)
 	}
 	log.Info().Str("worker_id", batch.WorkerID).Int("items", len(ids)).Msg("Master pulled worker metadata")
 	p.recordSuccess(worker, batch, len(ids))
-	return nil
+	return batch.Queued > len(batch.Items), nil
 }
 
 func (p *MasterPuller) recordSuccess(worker string, batch Batch, pulled int) {

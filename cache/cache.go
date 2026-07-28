@@ -4,6 +4,7 @@ import (
 	"dhtc/db"
 	"encoding/hex"
 	"sync"
+	"time"
 
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/rs/zerolog/log"
@@ -12,7 +13,10 @@ import (
 var (
 	infoHashCache   = mapset.NewSet[string]()
 	infoHashCacheMu sync.RWMutex
+	infoHashExpiry  = make(map[string]time.Time)
 )
+
+const maxExpiringInfoHashes = 100000
 
 func InfoHashCacheContains(infoHash string) bool {
 	infoHashCacheMu.RLock()
@@ -23,13 +27,43 @@ func InfoHashCacheContains(infoHash string) bool {
 func InfoHashCacheAdd(infoHash string) bool {
 	infoHashCacheMu.Lock()
 	defer infoHashCacheMu.Unlock()
+	if expiresAt, ok := infoHashExpiry[infoHash]; ok && !expiresAt.After(time.Now()) {
+		delete(infoHashExpiry, infoHash)
+		infoHashCache.Remove(infoHash)
+	}
 	return infoHashCache.Add(infoHash)
 }
 
 func InfoHashCacheRemove(infoHash string) {
 	infoHashCacheMu.Lock()
 	defer infoHashCacheMu.Unlock()
+	delete(infoHashExpiry, infoHash)
 	infoHashCache.Remove(infoHash)
+}
+
+func InfoHashCacheExpireAfter(infoHash string, ttl time.Duration) {
+	infoHashCacheMu.Lock()
+	defer infoHashCacheMu.Unlock()
+	if !infoHashCache.Contains(infoHash) {
+		return
+	}
+	now := time.Now()
+	if len(infoHashExpiry) >= maxExpiringInfoHashes {
+		for hash, expiresAt := range infoHashExpiry {
+			if !expiresAt.After(now) {
+				delete(infoHashExpiry, hash)
+				infoHashCache.Remove(hash)
+			}
+		}
+	}
+	if len(infoHashExpiry) >= maxExpiringInfoHashes {
+		for hash := range infoHashExpiry {
+			delete(infoHashExpiry, hash)
+			infoHashCache.Remove(hash)
+			break
+		}
+	}
+	infoHashExpiry[infoHash] = now.Add(ttl)
 }
 
 func PopulateInfoHashCacheFromDatabase(database db.Repository) {

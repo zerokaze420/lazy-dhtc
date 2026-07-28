@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"compress/gzip"
 	"context"
 	dhtcclient "dhtc/dhtc-client"
 	"encoding/json"
@@ -45,12 +46,67 @@ func TestWorkerQueuePullAndAck(t *testing.T) {
 	if err := puller.pull(context.Background(), server.URL); err != nil {
 		t.Fatal(err)
 	}
-	if queue.Length() != 1 {
-		t.Fatalf("queue length = %d, want 1 after ack", queue.Length())
+	if queue.Length() != 0 {
+		t.Fatalf("queue length = %d, want 0 after draining batches", queue.Length())
 	}
 	status := puller.Status()
-	if len(status) != 1 || !status[0].Online || status[0].Pulled != 1 || status[0].Queued != 1 {
+	if len(status) != 1 || !status[0].Online || status[0].Pulled != 2 || status[0].Queued != 0 {
 		t.Fatalf("worker status = %#v", status)
+	}
+}
+
+func TestWorkerQueueCompressesBatchWhenRequested(t *testing.T) {
+	queue := NewWorkerQueue("edge-gzip", 1, nil)
+	if !queue.Enqueue(dhtcclient.Metadata{InfoHash: make([]byte, 20), Name: "compressible metadata"}) {
+		t.Fatal("metadata was not enqueued")
+	}
+	req := httptest.NewRequest(http.MethodGet, QueuePath, nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Accept-Encoding", "gzip")
+	recorder := httptest.NewRecorder()
+	queue.Handler("secret", 1).ServeHTTP(recorder, req)
+
+	if recorder.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("content encoding = %q, want gzip", recorder.Header().Get("Content-Encoding"))
+	}
+	reader, err := gzip.NewReader(recorder.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	var batch Batch
+	if err := json.NewDecoder(reader).Decode(&batch); err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.Items) != 1 || batch.WorkerID != "edge-gzip" {
+		t.Fatalf("compressed batch = %#v", batch)
+	}
+}
+
+func TestWorkerQueueGzipResponse(t *testing.T) {
+	queue := NewWorkerQueue("edge-1", 1, nil)
+	if !queue.Enqueue(dhtcclient.Metadata{InfoHash: make([]byte, 20), Name: "compressed metadata"}) {
+		t.Fatal("metadata was not enqueued")
+	}
+	req := httptest.NewRequest(http.MethodGet, QueuePath, nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Accept-Encoding", "gzip")
+	recorder := httptest.NewRecorder()
+	queue.Handler("secret", 1).ServeHTTP(recorder, req)
+	if recorder.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("content encoding = %q, want gzip", recorder.Header().Get("Content-Encoding"))
+	}
+	reader, err := gzip.NewReader(recorder.Result().Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	var batch Batch
+	if err := json.NewDecoder(reader).Decode(&batch); err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.Items) != 1 || batch.Items[0].Metadata.Name != "compressed metadata" {
+		t.Fatalf("unexpected batch: %#v", batch)
 	}
 }
 
