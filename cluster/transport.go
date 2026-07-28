@@ -42,16 +42,17 @@ type WorkerQueue struct {
 	nextID   uint64
 	items    []Record
 	dropped  atomic.Uint64
+	onAck    func(dhtcclient.Metadata)
 }
 
-func NewWorkerQueue(workerID string, limit int) *WorkerQueue {
+func NewWorkerQueue(workerID string, limit int, onAck func(dhtcclient.Metadata)) *WorkerQueue {
 	if workerID == "" {
 		workerID = "worker"
 	}
 	if limit < 1 {
 		limit = 256
 	}
-	return &WorkerQueue{workerID: workerID, limit: limit}
+	return &WorkerQueue{workerID: workerID, limit: limit, onAck: onAck}
 }
 
 func (q *WorkerQueue) Enqueue(md dhtcclient.Metadata) bool {
@@ -79,18 +80,27 @@ func (q *WorkerQueue) Batch(limit int) Batch {
 
 func (q *WorkerQueue) Ack(ids []uint64) {
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	acked := make(map[uint64]struct{}, len(ids))
 	for _, id := range ids {
 		acked[id] = struct{}{}
 	}
 	kept := q.items[:0]
+	ackedMetadata := make([]dhtcclient.Metadata, 0, len(ids))
 	for _, item := range q.items {
-		if _, ok := acked[item.ID]; !ok {
+		if _, ok := acked[item.ID]; ok {
+			ackedMetadata = append(ackedMetadata, item.Metadata)
+		} else {
 			kept = append(kept, item)
 		}
 	}
 	q.items = kept
+	q.mu.Unlock()
+
+	if q.onAck != nil {
+		for _, md := range ackedMetadata {
+			q.onAck(md)
+		}
+	}
 }
 
 func (q *WorkerQueue) Length() int     { q.mu.Lock(); defer q.mu.Unlock(); return len(q.items) }

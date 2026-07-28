@@ -129,7 +129,9 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 	if strings.TrimSpace(cfg.ClusterToken) == "" {
 		log.Fatal().Msg("cluster token is required in worker mode")
 	}
-	queue := cluster.NewWorkerQueue(cfg.WorkerID, cfg.WorkerQueue)
+	queue := cluster.NewWorkerQueue(cfg.WorkerID, cfg.WorkerQueue, func(md dhtcclient.Metadata) {
+		cache.InfoHashCacheRemove(string(md.InfoHash))
+	})
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	crawler := ui.NewWorkerCrawlerManager(cfg, bootstrapNodes, queue.Enqueue)

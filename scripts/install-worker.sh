@@ -204,14 +204,20 @@ case "$WORKER_ID" in ''|*[!A-Za-z0-9._-]*) echo "错误：--worker-id 只能包�
 
 ASSET="dhtc-worker-linux-${ARCH}"
 if [ "$VERSION" = "latest" ]; then
-  BASE_URL="https://github.com/${REPO}/releases/latest/download"
+	LATEST_URL="$(curl -fsSL --retry 3 -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest")"
+	RESOLVED_VERSION="$(printf '%s\n' "$LATEST_URL" | awk -F'/tag/' 'NF > 1 { print $2 }')"
+	if [ -z "$RESOLVED_VERSION" ]; then
+		echo "错误：无法解析 GitHub 最新版本号" >&2
+		exit 1
+	fi
 else
-  BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
+	RESOLVED_VERSION="$VERSION"
 fi
+BASE_URL="https://github.com/${REPO}/releases/download/${RESOLVED_VERSION}"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 
-echo "正在下载 ${ASSET}（${VERSION}）..."
+echo "准备下载版本：${RESOLVED_VERSION}（${ASSET}）"
 curl -fL --retry 3 -o "$TMP_DIR/$ASSET" "$BASE_URL/$ASSET"
 curl -fL --retry 3 -o "$TMP_DIR/SHA256SUMS-linux.txt" "$BASE_URL/SHA256SUMS-linux.txt"
 EXPECTED="$(awk -v asset="$ASSET" '$2 == asset { print $1 }' "$TMP_DIR/SHA256SUMS-linux.txt")"
@@ -304,6 +310,7 @@ echo
 echo "┌─ dhtc Worker 安装完成"
 echo "│"
 echo "├─ 安装信息"
+printf '│  下载版本     │ %s\n' "${RESOLVED_VERSION}"
 printf '│  二进制       │ %s\n' "${INSTALL_DIR}/dhtc-worker"
 printf '│  数据目录     │ %s\n' "${DATA_DIR}"
 printf '│  systemd 服务 │ %s.service\n' "${SERVICE_NAME}"

@@ -10,7 +10,7 @@ import (
 )
 
 func TestWorkerQueuePullAndAck(t *testing.T) {
-	queue := NewWorkerQueue("edge-1", 2)
+	queue := NewWorkerQueue("edge-1", 2, nil)
 	md := dhtcclient.Metadata{InfoHash: make([]byte, 20), Name: "test", Family: 6}
 	if !queue.Enqueue(md) || !queue.Enqueue(md) || queue.Enqueue(md) {
 		t.Fatal("worker queue capacity was not enforced")
@@ -55,7 +55,7 @@ func TestWorkerQueuePullAndAck(t *testing.T) {
 }
 
 func TestMasterPullerReportsEmptyWorkerOnline(t *testing.T) {
-	queue := NewWorkerQueue("edge-empty", 2)
+	queue := NewWorkerQueue("edge-empty", 2, nil)
 	server := httptest.NewServer(queue.Handler("secret", 1))
 	defer server.Close()
 	puller, err := NewMasterPuller([]string{server.URL}, "secret", func(dhtcclient.Metadata) bool { return true })
@@ -72,12 +72,32 @@ func TestMasterPullerReportsEmptyWorkerOnline(t *testing.T) {
 }
 
 func TestWorkerQueueRequiresToken(t *testing.T) {
-	queue := NewWorkerQueue("edge-1", 1)
+	queue := NewWorkerQueue("edge-1", 1, nil)
 	req := httptest.NewRequest(http.MethodGet, QueuePath, nil)
 	recorder := httptest.NewRecorder()
 	queue.Handler("secret", 1).ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", recorder.Code)
+	}
+}
+
+func TestWorkerQueueAckNotifiesReleasedMetadata(t *testing.T) {
+	released := make(chan dhtcclient.Metadata, 1)
+	queue := NewWorkerQueue("edge-1", 1, func(md dhtcclient.Metadata) { released <- md })
+	md := dhtcclient.Metadata{InfoHash: []byte("12345678901234567890")}
+	if !queue.Enqueue(md) {
+		t.Fatal("metadata was not enqueued")
+	}
+	batch := queue.Batch(1)
+	queue.Ack([]uint64{batch.Items[0].ID})
+
+	select {
+	case got := <-released:
+		if string(got.InfoHash) != string(md.InfoHash) {
+			t.Fatalf("released hash = %q, want %q", got.InfoHash, md.InfoHash)
+		}
+	default:
+		t.Fatal("ack did not notify released metadata")
 	}
 }
 
