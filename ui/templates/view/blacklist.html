@@ -18,30 +18,27 @@
       />
     </svg>
     <span>
-      {{ if eq .op "add" }} {{ if .opOk }}Blacklist entry added successfully.{{
-      else }}Could not add blacklist entry.{{ end }} {{ else if eq .op "delete"
-      }} {{ if .opOk }}Blacklist entry deleted successfully.{{ else }}Could not
-      delete blacklist entry.{{ end }} {{ end }}
+      {{ if eq .op "add" }}{{ if .opOk }}{{ t .lang "blacklist_add_ok" }}{{ else }}{{ t .lang "blacklist_add_failed" }}{{ end }}{{ else if eq .op "delete" }}{{ if .opOk }}{{ t .lang "blacklist_delete_ok" }}{{ else }}{{ t .lang "blacklist_delete_failed" }}{{ end }}{{ end }}
     </span>
   </div>
   {{ end }}
 
   <div class="mb-8">
-    <h1 class="text-4xl font-extrabold tracking-tight">Blacklist</h1>
+    <h1 class="text-4xl font-extrabold tracking-tight">{{ t .lang "blacklist" }}</h1>
     <p class="text-base-content/60">
-      Define regex filters to ignore unwanted torrents or files
+      {{ t .lang "blacklist_filter_hint" }}
     </p>
   </div>
 
   <div class="card bg-base-100 shadow-xl border border-base-300 mb-8">
     <div class="card-body p-4 sm:p-6">
-      <h2 class="card-title text-lg mb-4">Add New Filter</h2>
+      <h2 class="card-title text-lg mb-4">{{ t .lang "add_new_filter" }}</h2>
       <form action="/blacklist" method="post">
         <input type="hidden" name="op" value="add" />
         <div class="flex flex-col lg:flex-row gap-4 items-end">
           <div class="form-control flex-grow w-full">
             <label class="label pt-0" for="blacklist-filter">
-              <span class="label-text font-semibold text-xs">Regex Filter</span>
+              <span class="label-text font-semibold text-xs">{{ t .lang "regex_filter" }}</span>
             </label>
             <input
               id="blacklist-filter"
@@ -55,20 +52,20 @@
 
           <div class="form-control w-full lg:w-48">
             <label class="label pt-0" for="blacklist-type">
-              <span class="label-text font-semibold text-xs">Type</span>
+              <span class="label-text font-semibold text-xs">{{ t .lang "type" }}</span>
             </label>
             <select
               id="blacklist-type"
               class="select select-bordered select-sm w-full pr-10"
               name="Type"
             >
-              <option value="0" selected>Name</option>
-              <option value="1">File name</option>
+              <option value="0" selected>{{ t .lang "name" }}</option>
+              <option value="1">{{ t .lang "file_name" }}</option>
             </select>
           </div>
 
           <button class="btn btn-primary btn-sm px-6" type="submit">
-            Add to Blacklist
+            {{ t .lang "add_to_blacklist" }}
           </button>
         </div>
       </form>
@@ -82,9 +79,9 @@
         <thead>
           <tr class="bg-base-300">
             <th class="w-16">#</th>
-            <th>Filter</th>
-            <th>Type</th>
-            <th class="text-right">Action</th>
+            <th>{{ t .lang "filter" }}</th>
+            <th>{{ t .lang "type" }}</th>
+            <th class="text-right">{{ t .lang "action" }}</th>
           </tr>
         </thead>
         <tbody>
@@ -107,7 +104,7 @@
                 <input type="hidden" name="op" value="delete" />
                 <input type="hidden" name="Id" value="{{ $item.Id }}" />
                 <button class="btn btn-error btn-ghost btn-xs" type="submit">
-                  Delete
+                  {{ t $.lang "delete" }}
                 </button>
               </form>
             </td>
@@ -121,10 +118,9 @@
   <div class="hero bg-base-100 rounded-xl shadow-xl p-10 mt-8">
     <div class="hero-content text-center">
       <div class="max-w-md">
-        <h1 class="text-2xl font-bold">Blacklist is empty</h1>
+        <h1 class="text-2xl font-bold">{{ t .lang "blacklist_empty" }}</h1>
         <p class="py-6 text-base-content/60">
-          Add filters to automatically skip torrents or files that match
-          specific patterns.
+          {{ t .lang "blacklist_empty_hint" }}
         </p>
       </div>
     </div>

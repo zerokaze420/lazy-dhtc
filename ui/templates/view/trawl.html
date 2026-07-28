@@ -1,6 +1,7 @@
 {{ define "trawl" }} {{ template "base" .}} {{ end }} {{define
 "extra_css"}}{{end}} {{define "extra_js"}}
 <script src="/js/sortable.min.js"></script>
+<script src="/js/lazycat-notifications.js"></script>
 <script>
   const socket = new WebSocket((window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws/trawl');
   const tableBody = document.querySelector('#trawl-table tbody');
@@ -8,16 +9,44 @@
   const aria2Enabled = {{ if .config.Aria2URL }}true{{ else }}false{{ end }}
   const delugeEnabled = {{ if .config.DelugeURL }}true{{ else }}false{{ end }}
   const qbittorrentEnabled = {{ if .config.QBittorrentURL }}true{{ else }}false{{ end }}
+  const systemNotificationTitle = {{ printf "%q" (t .lang "new_torrents") }};
+  let lastSystemNotificationAt = 0;
 
   const maxItemsSelect = document.getElementById('max-items');
+  const systemNotificationsInput = document.getElementById('system-notifications');
   let maxItems = parseInt(localStorage.getItem('trawl-max-items')) || 100;
+  let systemNotificationsEnabled = localStorage.getItem('trawl-system-notifications') !== 'false';
   maxItemsSelect.value = maxItems;
+  systemNotificationsInput.checked = systemNotificationsEnabled;
 
   maxItemsSelect.addEventListener('change', (e) => {
       maxItems = parseInt(e.target.value);
       localStorage.setItem('trawl-max-items', maxItems);
       trimTable();
   });
+
+  systemNotificationsInput.addEventListener('change', (e) => {
+      systemNotificationsEnabled = e.target.checked;
+      localStorage.setItem('trawl-system-notifications', systemNotificationsEnabled ? 'true' : 'false');
+  });
+
+  function notifyNewTorrent(md) {
+      if (!systemNotificationsEnabled || typeof window.dhtcNotifySystem !== 'function') {
+          return;
+      }
+
+      const now = Date.now();
+      if (now - lastSystemNotificationAt < 15000) {
+          return;
+      }
+      lastSystemNotificationAt = now;
+
+      window.dhtcNotifySystem({
+          title: systemNotificationTitle,
+          body: md.Name,
+          deeplinkUrl: window.location.origin + '/trawl',
+      });
+  }
 
   function trimTable() {
       while (tableBody.children.length > maxItems) {
@@ -38,7 +67,7 @@
 
       let actionHtml = `
           <div class="join join-vertical md:join-horizontal">
-              <a href="${magnet}" class="btn btn-info btn-xs join-item" title="Open magnet link">Open</a>
+              <a href="${magnet}" class="btn btn-info btn-xs join-item" title="{{ t .lang "open_magnet" }}">{{ t .lang "open" }}</a>
       `;
 
       if (transmissionEnabled) {
@@ -73,6 +102,8 @@
           tableBody.appendChild(row);
       }
 
+      notifyNewTorrent(md);
+
       // Fade out the highlight
       setTimeout(() => {
           row.classList.remove('bg-primary/10');
@@ -96,14 +127,14 @@
     class="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4"
   >
     <div>
-      <h1 class="text-4xl font-extrabold tracking-tight">Real-time Trawl</h1>
+      <h1 class="text-4xl font-extrabold tracking-tight">{{ t .lang "real_time_trawl" }}</h1>
       <p class="text-base-content/60">
-        Live view of incoming torrents from the DHT network
+        {{ t .lang "trawl_subtitle" }}
       </p>
     </div>
     <div class="form-control w-fit self-end md:self-auto">
       <label class="label" for="max-items">
-        <span class="label-text font-bold">Max items</span>
+        <span class="label-text font-bold">{{ t .lang "limit" }}</span>
       </label>
       <select
         id="max-items"
@@ -117,6 +148,14 @@
         <option value="5000">5000</option>
       </select>
     </div>
+    <label class="label cursor-pointer gap-3 self-end md:self-auto" title="{{ t .lang "system_notification_hint" }}">
+      <span class="label-text font-bold">{{ t .lang "system_notification" }}</span>
+      <input
+        id="system-notifications"
+        type="checkbox"
+        class="toggle toggle-primary"
+      />
+    </label>
   </div>
 
   <div class="card bg-base-100 shadow-xl overflow-hidden">
@@ -124,12 +163,12 @@
       <table id="trawl-table" class="table table-zebra w-full sortable">
         <thead>
           <tr class="bg-base-300">
-            <th>Name</th>
-            <th class="hidden md:table-cell">Tags</th>
-            <th>Total size</th>
-            <th class="hidden lg:table-cell">File count</th>
-            <th class="hidden sm:table-cell">First seen</th>
-            <th class="text-right">Action</th>
+            <th>{{ t .lang "name" }}</th>
+            <th class="hidden md:table-cell">{{ t .lang "tags" }}</th>
+            <th>{{ t .lang "total_size" }}</th>
+            <th class="hidden lg:table-cell">{{ t .lang "file_count" }}</th>
+            <th class="hidden sm:table-cell">{{ t .lang "first_seen" }}</th>
+            <th class="text-right">{{ t .lang "action" }}</th>
           </tr>
         </thead>
         <tbody></tbody>

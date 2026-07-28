@@ -1,6 +1,6 @@
 {{ define "base" }}
 <!doctype html>
-<html lang="en" data-theme="dark" class="h-full">
+<html lang="{{ .lang }}" data-theme="dark" class="h-full">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -21,10 +21,10 @@
           if (response.ok) {
             alert(data.message);
           } else {
-            alert("Error: " + data.error);
+            alert("{{ t .lang "download_error" }}: " + data.error);
           }
         } catch (error) {
-          alert("Error: " + error);
+          alert("{{ t .lang "download_error" }}: " + error);
         }
       }
     </script>

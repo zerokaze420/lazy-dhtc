@@ -109,6 +109,11 @@ func (r *CloverRepository) GetLatest(limit int, offset int) ([]MetaData, int64, 
 }
 
 func (r *CloverRepository) InsertMetadata(md dhtcclient.Metadata) bool {
+	if r.config.OnlyChineseContent && !ContainsChineseContent(md) {
+		log.Debug().Msgf("Filtered non-Chinese torrent: %s", md.Name)
+		return false
+	}
+
 	if r.config.EnableBlacklist && r.IsBlacklisted(md) {
 		log.Info().Msgf("Blacklisted: %s", md.Name)
 		return false
@@ -122,7 +127,11 @@ func (r *CloverRepository) InsertMetadata(md dhtcclient.Metadata) bool {
 	doc.Set("TotalSize", md.TotalSize)
 	doc.Set("Categories", Categorize(md))
 	_, err := r.db.InsertOne(TorrentTable, doc)
-	return err == nil
+	if err != nil {
+		return false
+	}
+	r.pruneOldTorrents()
+	return true
 }
 
 func (r *CloverRepository) GetWatchEntries() []WatchEntry {
@@ -306,6 +315,37 @@ func (r *CloverRepository) GetCategoryDistribution() (map[string]int64, error) {
 		}
 	}
 	return dist, nil
+}
+
+func (r *CloverRepository) ClearCapturedData() error {
+	if err := r.db.Delete(query.NewQuery(TorrentTable)); err != nil {
+		return err
+	}
+	return r.db.Delete(query.NewQuery(StatsTable))
+}
+
+func (r *CloverRepository) pruneOldTorrents() {
+	if r.config.MaxSavedTorrents <= 0 {
+		return
+	}
+
+	count, err := r.db.Count(query.NewQuery(TorrentTable))
+	if err != nil || count <= r.config.MaxSavedTorrents {
+		return
+	}
+
+	limit := count - r.config.MaxSavedTorrents
+	oldest, err := r.db.FindAll(query.NewQuery(TorrentTable).Sort(query.SortOption{Field: "DiscoveredOn", Direction: 1}).Limit(limit))
+	if err != nil {
+		log.Error().Err(err).Msg("Could not load old torrents for pruning")
+		return
+	}
+
+	for _, doc := range oldest {
+		if err := r.db.DeleteById(TorrentTable, doc.ObjectId()); err != nil {
+			log.Error().Err(err).Msg("Could not prune old torrent")
+		}
+	}
 }
 
 func (r *CloverRepository) Close() error {

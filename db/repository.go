@@ -27,6 +27,7 @@ type Repository interface {
 	InsertStats(stats Stats) error
 
 	GetCategoryDistribution() (map[string]int64, error)
+	ClearCapturedData() error
 
 	Close() error
 }

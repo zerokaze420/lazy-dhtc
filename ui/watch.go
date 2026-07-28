@@ -7,10 +7,9 @@ import (
 )
 
 func (c *Controller) WatchGet(ctx *gin.Context) {
-	ctx.HTML(http.StatusOK, "watches", gin.H{
-		"path":    ctx.FullPath(),
-		"results": c.Database.GetWatchEntries(),
-	})
+	h := c.getCommonH(ctx)
+	h["results"] = c.Database.GetWatchEntries()
+	ctx.HTML(http.StatusOK, "watches", h)
 }
 
 func (c *Controller) WatchPost(ctx *gin.Context) {
@@ -25,10 +24,9 @@ func (c *Controller) WatchPost(ctx *gin.Context) {
 		opOk = c.Database.DeleteWatchEntry(ctx.PostForm("id")) == nil
 	}
 
-	ctx.HTML(http.StatusOK, "watches", gin.H{
-		"path":    ctx.FullPath(),
-		"op":      op,
-		"opOk":    opOk,
-		"results": c.Database.GetWatchEntries(),
-	})
+	h := c.getCommonH(ctx)
+	h["op"] = op
+	h["opOk"] = opOk
+	h["results"] = c.Database.GetWatchEntries()
+	ctx.HTML(http.StatusOK, "watches", h)
 }

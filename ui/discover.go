@@ -26,6 +26,8 @@ func (c *Controller) DiscoverGet(ctx *gin.Context) {
 	h["totalPages"] = (total + int64(limit) - 1) / int64(limit)
 	h["limit"] = limit
 	h["total"] = total
+	h["titleKey"] = "discover"
+	h["subtitleKey"] = "discover_subtitle"
 
 	ctx.HTML(http.StatusOK, "discover", h)
 }
@@ -38,6 +40,8 @@ func (c *Controller) DiscoverPost(ctx *gin.Context) {
 
 	h := c.getCommonH(ctx)
 	h["results"] = c.Database.GetNRandomEntries(N)
+	h["titleKey"] = "discover"
+	h["subtitleKey"] = "discover_subtitle"
 
 	ctx.HTML(http.StatusOK, "discover", h)
 }

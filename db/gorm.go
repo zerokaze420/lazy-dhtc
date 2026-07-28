@@ -247,6 +247,11 @@ func (r *GormRepository) GetLatest(limit int, offset int) ([]MetaData, int64, er
 }
 
 func (r *GormRepository) InsertMetadata(md dhtcclient.Metadata) bool {
+	if r.config.OnlyChineseContent && !ContainsChineseContent(md) {
+		log.Debug().Msgf("Filtered non-Chinese torrent: %s", md.Name)
+		return false
+	}
+
 	if r.config.EnableBlacklist && r.IsBlacklisted(md) {
 		log.Info().Msgf("Blacklisted: %s", md.Name)
 		return false
@@ -263,7 +268,11 @@ func (r *GormRepository) InsertMetadata(md dhtcclient.Metadata) bool {
 	}
 
 	err := r.db.Create(&torrent).Error
-	return err == nil
+	if err != nil {
+		return false
+	}
+	r.pruneOldTorrents()
+	return true
 }
 
 func (r *GormRepository) GetWatchEntries() []WatchEntry {
@@ -444,6 +453,39 @@ func (r *GormRepository) GetCategoryDistribution() (map[string]int64, error) {
 		}
 	}
 	return dist, nil
+}
+
+func (r *GormRepository) ClearCapturedData() error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&GormTorrent{}).Error; err != nil {
+			return err
+		}
+		return tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&GormStats{}).Error
+	})
+}
+
+func (r *GormRepository) pruneOldTorrents() {
+	if r.config.MaxSavedTorrents <= 0 {
+		return
+	}
+
+	var count int64
+	if err := r.db.Model(&GormTorrent{}).Count(&count).Error; err != nil || count <= int64(r.config.MaxSavedTorrents) {
+		return
+	}
+
+	limit := int(count) - r.config.MaxSavedTorrents
+	var ids []uint
+	if err := r.db.Model(&GormTorrent{}).Order("discovered_on ASC").Limit(limit).Pluck("id", &ids).Error; err != nil {
+		log.Error().Err(err).Msg("Could not load old torrents for pruning")
+		return
+	}
+	if len(ids) == 0 {
+		return
+	}
+	if err := r.db.Delete(&GormTorrent{}, ids).Error; err != nil {
+		log.Error().Err(err).Msg("Could not prune old torrents")
+	}
 }
 
 func (r *GormRepository) Close() error {

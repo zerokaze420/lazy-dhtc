@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "build:css": "tailwindcss -i ./ui/static/css/input.css -o ./ui/static/css/style.css --minify",
+    "build:js": "esbuild ./ui/static/js/lazycat-notifications.src.js --bundle --format=iife --global-name=DHTCLazycatNotifications --outfile=./ui/static/js/lazycat-notifications.js --minify",
+    "build": "npm run build:css && npm run build:js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -20,8 +22,10 @@
   },
   "homepage": "https://github.com/nbdy/dhtc#readme",
   "devDependencies": {
+    "@lazycatcloud/sdk": "^0.1.541",
     "@tailwindcss/cli": "^4.1.18",
     "daisyui": "^5.5.14",
+    "esbuild": "^0.28.1",
     "playwright": "^1.49.1",
     "tailwindcss": "^4.1.18"
   }

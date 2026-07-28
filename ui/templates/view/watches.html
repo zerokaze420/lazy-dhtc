@@ -17,67 +17,66 @@
         d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
       />
     </svg>
-    <span
-      >Watch {{if eq .op "add"}}added{{else}}deleted{{end}} {{if
-      .opOk}}successfully{{else}}failed{{end}}.</span
-    >
+    <span>
+      {{ if eq .op "add" }}{{ if .opOk }}{{ t .lang "watch_add_ok" }}{{ else }}{{ t .lang "watch_add_failed" }}{{ end }}{{ else if eq .op "delete" }}{{ if .opOk }}{{ t .lang "watch_delete_ok" }}{{ else }}{{ t .lang "watch_delete_failed" }}{{ end }}{{ end }}
+    </span>
   </div>
   {{end}}
 
   <div class="mb-8">
-    <h1 class="text-4xl font-extrabold tracking-tight">Watches</h1>
+    <h1 class="text-4xl font-extrabold tracking-tight">{{ t .lang "watches" }}</h1>
     <p class="text-base-content/60">
-      Manage automatic notifications for matching torrents
+      {{ t .lang "manage_watches" }}
     </p>
   </div>
 
   <div class="card bg-base-100 shadow-xl border border-base-300 mb-8">
     <div class="card-body p-4 sm:p-6">
-      <h2 class="card-title text-lg mb-4">Add New Watch</h2>
+      <h2 class="card-title text-lg mb-4">{{ t .lang "add_new_watch" }}</h2>
       <form action="/watches" method="post">
         <input type="hidden" name="op" value="add" />
         <div class="flex flex-col lg:flex-row gap-4 items-end">
           <div class="form-control w-full lg:w-48">
             <label class="label pt-0" for="watch-key">
-              <span class="label-text font-semibold text-xs">Field</span>
+              <span class="label-text font-semibold text-xs">{{ t .lang "field" }}</span>
             </label>
             <select
               id="watch-key"
               class="select select-bordered select-sm w-full pr-10"
               name="key"
             >
-              <option value="Name" selected>Name</option>
-              <option value="InfoHash">Info hash</option>
-              <option value="Files">File name</option>
-              <option value="DiscoveredOn">Date</option>
+              <option value="Name" selected>{{ t .lang "name" }}</option>
+              <option value="InfoHash">{{ t .lang "info_hash" }}</option>
+              <option value="Files">{{ t .lang "file_name" }}</option>
+              <option value="DiscoveredOn">{{ t .lang "date" }}</option>
             </select>
           </div>
 
           <div class="form-control w-full lg:w-48">
             <label class="label pt-0" for="watch-match-type">
-              <span class="label-text font-semibold text-xs">Match Type</span>
+              <span class="label-text font-semibold text-xs">{{ t .lang "match_type" }}</span>
             </label>
             <select
               id="watch-match-type"
               class="select select-bordered select-sm w-full pr-10"
               name="match-type"
             >
-              <option value="contains" selected>contains</option>
-              <option value="equals">equals</option>
-              <option value="startswith">starts with</option>
-              <option value="endswith">ends with</option>
+              <option value="contains" selected>{{ t .lang "contains" }}</option>
+              <option value="equals">{{ t .lang "equals" }}</option>
+              <option value="startswith">{{ t .lang "starts_with" }}</option>
+              <option value="endswith">{{ t .lang "ends_with" }}</option>
             </select>
           </div>
 
           <div class="form-control flex-grow w-full">
             <label class="label pt-0" for="watch-content">
-              <span class="label-text font-semibold text-xs">Content</span>
+              <span class="label-text font-semibold text-xs">{{ t .lang "content" }}</span>
             </label>
             <div class="join w-full">
               <input
                 id="watch-content"
                 type="text"
-                placeholder="Content to watch for..."
+                placeholder="{{ t .lang "watch_content_hint" }}"
                 class="input input-bordered input-sm join-item w-full"
                 name="search-input"
                 required
@@ -86,7 +85,7 @@
                 class="btn btn-primary btn-sm join-item px-6"
                 type="submit"
               >
-                Add Watch
+                {{ t .lang "add_watch" }}
               </button>
             </div>
           </div>
@@ -102,10 +101,10 @@
         <thead>
           <tr class="bg-base-300">
             <th class="w-16">#</th>
-            <th>Key</th>
-            <th>Match type</th>
-            <th>Content</th>
-            <th class="text-right">Action</th>
+            <th>{{ t .lang "key" }}</th>
+            <th>{{ t .lang "match_type" }}</th>
+            <th>{{ t .lang "content" }}</th>
+            <th class="text-right">{{ t .lang "action" }}</th>
           </tr>
         </thead>
         <tbody>
@@ -135,7 +134,7 @@
                 <input type="hidden" name="op" value="delete" />
                 <input type="hidden" name="id" value="{{ $item.Id }}" />
                 <button class="btn btn-error btn-ghost btn-xs" type="submit">
-                  Delete
+                  {{ t $.lang "delete" }}
                 </button>
               </form>
             </td>
@@ -149,10 +148,9 @@
   <div class="hero bg-base-100 rounded-xl shadow-xl p-10 mt-8">
     <div class="hero-content text-center">
       <div class="max-w-md">
-        <h1 class="text-2xl font-bold">No watches active</h1>
+        <h1 class="text-2xl font-bold">{{ t .lang "no_watches" }}</h1>
         <p class="py-6 text-base-content/60">
-          Define watches to get notified when torrents matching your criteria
-          are discovered.
+          {{ t .lang "no_watches_hint" }}
         </p>
       </div>
     </div>

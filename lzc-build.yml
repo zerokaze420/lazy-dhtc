@@ -1,0 +1,13 @@
+manifest: ./lzc-manifest.yml
+pkgout: ./dist-lpk
+icon: ./icon.app.png
+
+images:
+  app:
+    dockerfile: ./Dockerfile.lpk
+    context: .
+    builder: local
+
+resource_exports:
+  - kind: mcp-providers
+    source: ./resources/mcp-providers

@@ -1,0 +1,349 @@
+package ui
+
+import (
+	"strings"
+
+	"github.com/gin-gonic/gin"
+)
+
+const (
+	defaultLanguage = "en-US"
+	chineseLanguage = "zh-CN"
+)
+
+var translations = map[string]map[string]string{
+	"en-US": {
+		"action":                    "Action",
+		"advanced_filters":          "Advanced Filters",
+		"all":                       "All",
+		"blacklist":                 "Blacklist",
+		"category_distribution":     "Category Distribution",
+		"dashboard":                 "Dashboard",
+		"date":                      "Date",
+		"discover":                  "Discover",
+		"discover_subtitle":         "Explore the latest additions to the database",
+		"discovery_timeline":        "Discovery Timeline",
+		"download_error":            "Error",
+		"ends_with":                 "ends with",
+		"equals":                    "equals",
+		"field":                     "Field",
+		"file_count":                "File count",
+		"file_name":                 "File name",
+		"first_seen":                "First seen",
+		"info_hash":                 "Info hash",
+		"interval":                  "Interval:",
+		"language":                  "Language",
+		"limit":                     "Limit",
+		"latest_hour":               "Last Hour (Minutely)",
+		"latest_month":              "Last 30 Days (Daily)",
+		"latest_day":                "Last 24 Hours (Hourly)",
+		"match_type":                "Match Type",
+		"max_size_bytes":            "Max Size (bytes)",
+		"min_size_bytes":            "Min Size (bytes)",
+		"name":                      "Name",
+		"new_torrents":              "New Torrents",
+		"no_categories":             "No categories found",
+		"no_discovery_data":         "No discovery data available yet",
+		"no_results":                "No results found",
+		"no_results_hint":           "Try adjusting your search filters or check back later.",
+		"open":                      "Open",
+		"open_magnet":               "Open magnet link",
+		"only_chinese_content":      "Only store Chinese content",
+		"only_chinese_content_hint": "Keep torrents when the torrent name or any file path contains Chinese characters.",
+		"overview_activity":         "Overview of your DHT crawler activity",
+		"path":                      "Path",
+		"real_time_trawl":           "Real-time Trawl",
+		"randomize":                 "Randomize",
+		"results":                   "Results",
+		"search":                    "Search",
+		"search_placeholder":        "Search...",
+		"search_query":              "Search Query",
+		"search_subtitle":           "Search through the collected torrent metadata",
+		"settings":                  "Settings",
+		"size":                      "Size",
+		"start_date":                "Start Date",
+		"end_date":                  "End Date",
+		"starts_with":               "starts with",
+		"contains":                  "contains",
+		"tags":                      "Tags",
+		"total_size":                "Total size",
+		"total_torrents":            "Total Torrents",
+		"trawl":                     "Trawl",
+		"trawl_subtitle":            "Live view of incoming torrents from the DHT network",
+		"watches":                   "Watches",
+		"appearance":                "Appearance",
+		"bot_token":                 "Bot Token",
+		"bootstrap_nodes_file":      "Bootstrap Nodes File",
+		"collect_statistics":        "Collect Statistics",
+		"configure_preferences":     "Configure your personal preferences and system behavior",
+		"crawler":                   "Crawler",
+		"crawler_auto_stop_at":      "Auto-stop at:",
+		"crawler_auto_stop_hint":    "Set 0 to keep crawling until you stop it manually.",
+		"crawler_auto_stop_minutes": "Auto-stop after (minutes)",
+		"crawler_control":           "Crawler Control",
+		"crawler_running":           "The DHT crawler is running.",
+		"crawler_start_on_launch":   "Start crawling when the app launches",
+		"crawler_stopped":           "The DHT crawler is stopped.",
+		"crawler_threads":           "Crawler Threads",
+		"downloaders":               "Downloaders",
+		"drain_timeout":             "Drain Timeout",
+		"enable_blacklisting":       "Enable Blacklisting",
+		"file_blacklist_file":       "File Blacklist File",
+		"general":                   "General",
+		"interface_theme":           "Interface Theme",
+		"json_rpc_url":              "JSON-RPC URL",
+		"max_concurrent":            "Max. Concurrent Downloads",
+		"max_leeches":               "Max. Leeches",
+		"max_neighbors":             "Max. Neighbors",
+		"max_saved_torrents":        "Max Saved Torrents",
+		"max_saved_torrents_hint":   "Deletes oldest torrents after this limit. Set 0 to disable pruning.",
+		"name_blacklist_file":       "Name Blacklist File",
+		"notifications":             "Notifications",
+		"password":                  "Password",
+		"paths":                     "Paths",
+		"personalize_dashboard":     "Personalize the look of your dashboard",
+		"pick_theme":                "Pick a theme",
+		"rate_limit":                "Rate Limit",
+		"reset_changes":             "Reset Changes",
+		"rpc_url":                   "RPC URL",
+		"safe_mode":                 "Safe Mode",
+		"save_all_settings":         "Save All Settings",
+		"secret_token":              "Secret Token",
+		"settings_saved":            "Settings saved successfully! Some changes may require a restart to take effect.",
+		"start_crawling":            "Start Crawling",
+		"target_username":           "Target Username",
+		"stop_crawling":             "Stop Crawling",
+		"token":                     "Token",
+		"url":                       "URL",
+		"username":                  "Username",
+		"web_ui_url":                "Web UI URL",
+		"webhook_url":               "Webhook URL",
+		"add_new_filter":            "Add New Filter",
+		"add_new_watch":             "Add New Watch",
+		"add_watch":                 "Add Watch",
+		"blacklist_add_failed":      "Could not add blacklist entry.",
+		"blacklist_add_ok":          "Blacklist entry added successfully.",
+		"blacklist_delete_failed":   "Could not delete blacklist entry.",
+		"blacklist_delete_ok":       "Blacklist entry deleted successfully.",
+		"blacklist_empty":           "Blacklist is empty",
+		"blacklist_empty_hint":      "Add filters to automatically skip torrents or files that match specific patterns.",
+		"blacklist_filter_hint":     "Define regex filters to ignore unwanted torrents or files",
+		"content":                   "Content",
+		"delete":                    "Delete",
+		"filter":                    "Filter",
+		"key":                       "Key",
+		"manage_watches":            "Manage automatic notifications for matching torrents",
+		"no_watches":                "No watches active",
+		"no_watches_hint":           "Define watches to get notified when torrents matching your criteria are discovered.",
+		"regex_filter":              "Regex Filter",
+		"type":                      "Type",
+		"watch_add_failed":          "Could not add watch.",
+		"watch_add_ok":              "Watch added successfully.",
+		"watch_content_hint":        "Content to watch for...",
+		"watch_delete_failed":       "Could not delete watch.",
+		"watch_delete_ok":           "Watch deleted successfully.",
+		"system_notification":       "System Notification",
+		"system_notification_hint":  "Notify this device when new torrents are captured.",
+		"danger_zone":               "Danger Zone",
+		"clear_data":                "Clear Captured Data",
+		"clear_data_hint":           "Deletes saved torrents and statistics. Watches, blacklist entries, and settings are kept.",
+		"clear_data_confirm":        "Type CLEAR to confirm",
+		"clear_data_prompt":         "Clear saved torrents and statistics?",
+		"clear_data_confirm_failed": "Type CLEAR before clearing data.",
+	},
+	"zh-CN": {
+		"action":                    "操作",
+		"advanced_filters":          "高级筛选",
+		"all":                       "全部",
+		"blacklist":                 "黑名单",
+		"category_distribution":     "分类分布",
+		"dashboard":                 "仪表盘",
+		"date":                      "日期",
+		"discover":                  "发现",
+		"discover_subtitle":         "浏览数据库中的最新条目",
+		"discovery_timeline":        "发现趋势",
+		"download_error":            "错误",
+		"ends_with":                 "结尾匹配",
+		"equals":                    "完全匹配",
+		"field":                     "字段",
+		"file_count":                "文件数",
+		"file_name":                 "文件名",
+		"first_seen":                "首次发现",
+		"info_hash":                 "Info Hash",
+		"interval":                  "时间粒度：",
+		"language":                  "语言",
+		"limit":                     "限制",
+		"latest_hour":               "最近 1 小时（按分钟）",
+		"latest_month":              "最近 30 天（按天）",
+		"latest_day":                "最近 24 小时（按小时）",
+		"match_type":                "匹配方式",
+		"max_size_bytes":            "最大体积（字节）",
+		"min_size_bytes":            "最小体积（字节）",
+		"name":                      "名称",
+		"new_torrents":              "新增种子",
+		"no_categories":             "暂无分类数据",
+		"no_discovery_data":         "暂无发现数据",
+		"no_results":                "没有找到结果",
+		"no_results_hint":           "可以调整搜索条件，或稍后再试。",
+		"open":                      "打开",
+		"open_magnet":               "打开磁力链接",
+		"only_chinese_content":      "仅保存中文内容",
+		"only_chinese_content_hint": "种子名或任意文件路径包含中文字符时才保存。",
+		"overview_activity":         "查看 DHT 爬虫活动概览",
+		"path":                      "路径",
+		"real_time_trawl":           "实时捕获",
+		"randomize":                 "随机",
+		"results":                   "结果",
+		"search":                    "搜索",
+		"search_placeholder":        "搜索...",
+		"search_query":              "搜索关键词",
+		"search_subtitle":           "搜索已采集的种子元数据",
+		"settings":                  "设置",
+		"size":                      "大小",
+		"start_date":                "开始日期",
+		"end_date":                  "结束日期",
+		"starts_with":               "开头匹配",
+		"contains":                  "包含",
+		"tags":                      "标签",
+		"total_size":                "总大小",
+		"total_torrents":            "种子总数",
+		"trawl":                     "捕获",
+		"trawl_subtitle":            "实时查看从 DHT 网络进入的种子",
+		"watches":                   "订阅",
+		"appearance":                "外观",
+		"bot_token":                 "Bot Token",
+		"bootstrap_nodes_file":      "Bootstrap 节点文件",
+		"collect_statistics":        "收集统计数据",
+		"configure_preferences":     "配置个人偏好和系统行为",
+		"crawler":                   "爬虫",
+		"crawler_auto_stop_at":      "自动停止时间：",
+		"crawler_auto_stop_hint":    "设置为 0 表示持续捕获，直到手动停止。",
+		"crawler_auto_stop_minutes": "自动停止时间（分钟）",
+		"crawler_control":           "捕获控制",
+		"crawler_running":           "DHT 爬虫正在捕获。",
+		"crawler_start_on_launch":   "应用启动时自动开始捕获",
+		"crawler_stopped":           "DHT 爬虫已停止。",
+		"crawler_threads":           "爬虫线程数",
+		"downloaders":               "下载器",
+		"drain_timeout":             "排空超时",
+		"enable_blacklisting":       "启用黑名单",
+		"file_blacklist_file":       "文件黑名单文件",
+		"general":                   "通用",
+		"interface_theme":           "界面主题",
+		"json_rpc_url":              "JSON-RPC URL",
+		"max_concurrent":            "最大并发下载数",
+		"max_leeches":               "最大 Leeches",
+		"max_neighbors":             "最大邻居数",
+		"max_saved_torrents":        "最多保存种子数",
+		"max_saved_torrents_hint":   "超过该数量后自动删除最旧种子。设置为 0 表示不限制。",
+		"name_blacklist_file":       "名称黑名单文件",
+		"notifications":             "通知",
+		"password":                  "密码",
+		"paths":                     "路径",
+		"personalize_dashboard":     "自定义仪表盘外观",
+		"pick_theme":                "选择主题",
+		"rate_limit":                "速率限制",
+		"reset_changes":             "重置更改",
+		"rpc_url":                   "RPC URL",
+		"safe_mode":                 "安全模式",
+		"save_all_settings":         "保存全部设置",
+		"secret_token":              "密钥令牌",
+		"settings_saved":            "设置已保存。部分更改可能需要重启后生效。",
+		"start_crawling":            "开始捕获",
+		"target_username":           "目标用户名",
+		"stop_crawling":             "停止捕获",
+		"token":                     "Token",
+		"url":                       "URL",
+		"username":                  "用户名",
+		"web_ui_url":                "Web UI URL",
+		"webhook_url":               "Webhook URL",
+		"add_new_filter":            "新增过滤器",
+		"add_new_watch":             "新增订阅",
+		"add_watch":                 "添加订阅",
+		"blacklist_add_failed":      "黑名单条目添加失败。",
+		"blacklist_add_ok":          "黑名单条目已添加。",
+		"blacklist_delete_failed":   "黑名单条目删除失败。",
+		"blacklist_delete_ok":       "黑名单条目已删除。",
+		"blacklist_empty":           "黑名单为空",
+		"blacklist_empty_hint":      "添加过滤器后，会自动跳过匹配指定模式的种子或文件。",
+		"blacklist_filter_hint":     "定义正则过滤器，忽略不需要的种子或文件",
+		"content":                   "内容",
+		"delete":                    "删除",
+		"filter":                    "过滤器",
+		"key":                       "字段",
+		"manage_watches":            "管理匹配种子的自动通知",
+		"no_watches":                "暂无订阅",
+		"no_watches_hint":           "添加订阅后，发现匹配条件的种子时会发送通知。",
+		"regex_filter":              "正则过滤器",
+		"type":                      "类型",
+		"watch_add_failed":          "订阅添加失败。",
+		"watch_add_ok":              "订阅已添加。",
+		"watch_content_hint":        "要订阅的内容...",
+		"watch_delete_failed":       "订阅删除失败。",
+		"watch_delete_ok":           "订阅已删除。",
+		"system_notification":       "系统通知",
+		"system_notification_hint":  "捕获到新种子时通知当前设备。",
+		"danger_zone":               "危险操作",
+		"clear_data":                "清除捕获数据",
+		"clear_data_hint":           "删除已保存种子和统计数据。订阅、黑名单和设置会保留。",
+		"clear_data_confirm":        "输入 CLEAR 确认",
+		"clear_data_prompt":         "确定清除已保存种子和统计数据吗？",
+		"clear_data_confirm_failed": "请先输入 CLEAR 再清除数据。",
+	},
+}
+
+func translate(lang, key string) string {
+	if values, ok := translations[lang]; ok {
+		if value, ok := values[key]; ok {
+			return value
+		}
+	}
+	if value, ok := translations[defaultLanguage][key]; ok {
+		return value
+	}
+	return key
+}
+
+func detectLanguage(ctx *gin.Context) string {
+	if lang := normalizeLanguage(ctx.Query("lang")); lang != "" {
+		ctx.SetCookie("dhtc-lang", lang, 60*60*24*365, "/", "", false, false)
+		return lang
+	}
+	if lang, err := ctx.Cookie("dhtc-lang"); err == nil {
+		if normalized := normalizeLanguage(lang); normalized != "" {
+			return normalized
+		}
+	}
+	return languageFromAcceptHeader(ctx.GetHeader("Accept-Language"))
+}
+
+func normalizeLanguage(lang string) string {
+	lang = strings.TrimSpace(strings.ToLower(lang))
+	switch lang {
+	case "zh", "zh-cn", "zh_hans", "zh-hans", "cn":
+		return chineseLanguage
+	case "en", "en-us", "en-gb":
+		return defaultLanguage
+	default:
+		return ""
+	}
+}
+
+func languageFromAcceptHeader(header string) string {
+	for _, part := range strings.Split(header, ",") {
+		if lang := normalizeLanguage(strings.Split(part, ";")[0]); lang != "" {
+			return lang
+		}
+	}
+	return defaultLanguage
+}
+
+func languageURL(ctx *gin.Context, lang string) string {
+	values := ctx.Request.URL.Query()
+	values.Set("lang", lang)
+	path := ctx.Request.URL.Path
+	if path == "" {
+		path = "/"
+	}
+	return path + "?" + values.Encode()
+}

@@ -1,9 +1,9 @@
 {{ define "settings" }} {{ template "base" .}} {{ end }} {{ define "body" }}
 <div class="container mx-auto p-4 md:p-8">
   <div class="mb-8">
-    <h1 class="text-4xl font-extrabold tracking-tight">Settings</h1>
+    <h1 class="text-4xl font-extrabold tracking-tight">{{ t .lang "settings" }}</h1>
     <p class="text-base-content/60">
-      Configure your personal preferences and system behavior
+      {{ t .lang "configure_preferences" }}
     </p>
   </div>
 
@@ -24,8 +24,7 @@
         />
       </svg>
       <span
-        >Settings saved successfully! (Note: Some changes may require a restart
-        to take effect)</span
+        >{{ t .lang "settings_saved" }}</span
       >
     </div>
   </div>
@@ -69,11 +68,11 @@
               d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
             />
           </svg>
-          <h2 class="card-title text-2xl">Appearance</h2>
+          <h2 class="card-title text-2xl">{{ t .lang "appearance" }}</h2>
         </div>
         <div class="form-control w-full max-w-xs">
           <label class="label" for="theme-selector">
-            <span class="label-text font-semibold">Interface Theme</span>
+            <span class="label-text font-semibold">{{ t .lang "interface_theme" }}</span>
           </label>
           <select
             id="theme-selector"
@@ -83,7 +82,7 @@
               localStorage.setItem('theme', this.value);
             "
           >
-            <option disabled selected>Pick a theme</option>
+            <option disabled selected>{{ t .lang "pick_theme" }}</option>
             <option value="dark">Dark</option>
             <option value="light">Light</option>
             <option value="cupcake">Cupcake</option>
@@ -122,7 +121,7 @@
           </select>
           <label class="label">
             <span class="label-text-alt text-base-content/50"
-              >Personalize the look of your dashboard</span
+              >{{ t .lang "personalize_dashboard" }}</span
             >
           </label>
         </div>
@@ -154,7 +153,7 @@
                 d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
               />
             </svg>
-            <h2 class="card-title text-2xl">General</h2>
+            <h2 class="card-title text-2xl">{{ t .lang "general" }}</h2>
           </div>
 
           <div class="space-y-4">
@@ -173,7 +172,7 @@
                   }}
                 />
                 <input type="hidden" name="SafeMode" value="false" />
-                <span class="label-text font-semibold">Safe Mode</span>
+                <span class="label-text font-semibold">{{ t .lang "safe_mode" }}</span>
               </label>
             </div>
 
@@ -192,7 +191,7 @@
                   }}
                 />
                 <input type="hidden" name="Statistics" value="false" />
-                <span class="label-text font-semibold">Collect Statistics</span>
+                <span class="label-text font-semibold">{{ t .lang "collect_statistics" }}</span>
               </label>
             </div>
 
@@ -212,17 +211,38 @@
                 />
                 <input type="hidden" name="EnableBlacklist" value="false" />
                 <span class="label-text font-semibold"
-                  >Enable Blacklisting</span
+                  >{{ t .lang "enable_blacklisting" }}</span
                 >
               </label>
             </div>
 
-            <div class="divider">Paths</div>
+            <div class="form-control">
+              <label class="label cursor-pointer justify-start gap-4">
+                <input
+                  type="checkbox"
+                  name="OnlyChineseContent"
+                  value="true"
+                  class="checkbox checkbox-primary"
+                  {{
+                  if
+                  .config.OnlyChineseContent
+                  }}checked{{
+                  end
+                  }}
+                />
+                <input type="hidden" name="OnlyChineseContent" value="false" />
+                <span class="label-text font-semibold"
+                  >{{ t .lang "only_chinese_content" }}</span
+                >
+              </label>
+            </div>
+
+            <div class="divider">{{ t .lang "paths" }}</div>
 
             <div class="form-control w-full">
               <label class="label" for="BootstrapNodeFile">
                 <span class="label-text font-semibold"
-                  >Bootstrap Nodes File</span
+                  >{{ t .lang "bootstrap_nodes_file" }}</span
                 >
               </label>
               <input
@@ -237,7 +257,7 @@
             <div class="form-control w-full">
               <label class="label" for="NameBlacklist">
                 <span class="label-text font-semibold"
-                  >Name Blacklist File</span
+                  >{{ t .lang "name_blacklist_file" }}</span
                 >
               </label>
               <input
@@ -252,7 +272,7 @@
             <div class="form-control w-full">
               <label class="label" for="FileBlacklist">
                 <span class="label-text font-semibold"
-                  >File Blacklist File</span
+                  >{{ t .lang "file_blacklist_file" }}</span
                 >
               </label>
               <input
@@ -285,13 +305,13 @@
                 d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
               />
             </svg>
-            <h2 class="card-title text-2xl">Crawler</h2>
+            <h2 class="card-title text-2xl">{{ t .lang "crawler" }}</h2>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div class="form-control w-full">
               <label class="label" for="CrawlerThreads">
-                <span class="label-text font-semibold">Crawler Threads</span>
+                <span class="label-text font-semibold">{{ t .lang "crawler_threads" }}</span>
               </label>
               <input
                 id="CrawlerThreads"
@@ -301,9 +321,27 @@
                 class="input input-bordered w-full"
               />
             </div>
+            <div class="form-control sm:col-span-2">
+              <label class="label cursor-pointer justify-start gap-4">
+                <input
+                  type="checkbox"
+                  name="CrawlerStartOnLaunch"
+                  value="true"
+                  class="checkbox checkbox-primary"
+                  {{
+                  if
+                  .config.CrawlerStartOnLaunch
+                  }}checked{{
+                  end
+                  }}
+                />
+                <input type="hidden" name="CrawlerStartOnLaunch" value="false" />
+                <span class="label-text font-semibold">{{ t .lang "crawler_start_on_launch" }}</span>
+              </label>
+            </div>
             <div class="form-control w-full">
               <label class="label" for="RateLimit">
-                <span class="label-text font-semibold">Rate Limit</span>
+                <span class="label-text font-semibold">{{ t .lang "rate_limit" }}</span>
               </label>
               <input
                 id="RateLimit"
@@ -315,7 +353,7 @@
             </div>
             <div class="form-control w-full">
               <label class="label" for="MaxNeighbors">
-                <span class="label-text font-semibold">Max. Neighbors</span>
+                <span class="label-text font-semibold">{{ t .lang "max_neighbors" }}</span>
               </label>
               <input
                 id="MaxNeighbors"
@@ -327,7 +365,7 @@
             </div>
             <div class="form-control w-full">
               <label class="label" for="MaxLeeches">
-                <span class="label-text font-semibold">Max. Leeches</span>
+                <span class="label-text font-semibold">{{ t .lang "max_leeches" }}</span>
               </label>
               <input
                 id="MaxLeeches"
@@ -340,7 +378,7 @@
             <div class="form-control w-full">
               <label class="label" for="MaxConcurrentDownloads">
                 <span class="label-text font-semibold"
-                  >Max. Concurrent Downloads</span
+                  >{{ t .lang "max_concurrent" }}</span
                 >
               </label>
               <input
@@ -353,7 +391,7 @@
             </div>
             <div class="form-control w-full">
               <label class="label" for="DrainTimeout">
-                <span class="label-text font-semibold">Drain Timeout</span>
+                <span class="label-text font-semibold">{{ t .lang "drain_timeout" }}</span>
               </label>
               <input
                 id="DrainTimeout"
@@ -363,6 +401,38 @@
                 class="input input-bordered w-full"
                 placeholder="e.g. 5s"
               />
+            </div>
+            <div class="form-control w-full">
+              <label class="label" for="CrawlerAutoStopMinutes">
+                <span class="label-text font-semibold">{{ t .lang "crawler_auto_stop_minutes" }}</span>
+              </label>
+              <input
+                id="CrawlerAutoStopMinutes"
+                type="number"
+                min="0"
+                name="CrawlerAutoStopMinutes"
+                value="{{ .config.CrawlerAutoStopMinutes }}"
+                class="input input-bordered w-full"
+              />
+              <label class="label">
+                <span class="label-text-alt text-base-content/50">{{ t .lang "crawler_auto_stop_hint" }}</span>
+              </label>
+            </div>
+            <div class="form-control w-full">
+              <label class="label" for="MaxSavedTorrents">
+                <span class="label-text font-semibold">{{ t .lang "max_saved_torrents" }}</span>
+              </label>
+              <input
+                id="MaxSavedTorrents"
+                type="number"
+                min="0"
+                name="MaxSavedTorrents"
+                value="{{ .config.MaxSavedTorrents }}"
+                class="input input-bordered w-full"
+              />
+              <label class="label">
+                <span class="label-text-alt text-base-content/50">{{ t .lang "max_saved_torrents_hint" }}</span>
+              </label>
             </div>
           </div>
         </div>
@@ -386,7 +456,7 @@
                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
               />
             </svg>
-            <h2 class="card-title text-2xl">Downloaders</h2>
+            <h2 class="card-title text-2xl">{{ t .lang "downloaders" }}</h2>
           </div>
 
           <div class="space-y-4">
@@ -402,7 +472,7 @@
               <div class="collapse-content">
                 <div class="form-control w-full">
                   <label class="label" for="TransmissionURL"
-                    ><span class="label-text">RPC URL</span></label
+                    ><span class="label-text">{{ t .lang "rpc_url" }}</span></label
                   >
                   <input
                     id="TransmissionURL"
@@ -416,7 +486,7 @@
                 <div class="grid grid-cols-2 gap-4">
                   <div class="form-control w-full">
                     <label class="label" for="TransmissionUser"
-                      ><span class="label-text">Username</span></label
+                      ><span class="label-text">{{ t $.lang "username" }}</span></label
                     >
                     <input
                       id="TransmissionUser"
@@ -428,7 +498,7 @@
                   </div>
                   <div class="form-control w-full">
                     <label class="label" for="TransmissionPass"
-                      ><span class="label-text">Password</span></label
+                      ><span class="label-text">{{ t $.lang "password" }}</span></label
                     >
                     <input
                       id="TransmissionPass"
@@ -452,7 +522,7 @@
               <div class="collapse-content">
                 <div class="form-control w-full">
                   <label class="label" for="Aria2URL"
-                    ><span class="label-text">RPC URL</span></label
+                    ><span class="label-text">{{ t .lang "rpc_url" }}</span></label
                   >
                   <input
                     id="Aria2URL"
@@ -465,7 +535,7 @@
                 </div>
                 <div class="form-control w-full">
                   <label class="label" for="Aria2Token"
-                    ><span class="label-text">Secret Token</span></label
+                    ><span class="label-text">{{ t .lang "secret_token" }}</span></label
                   >
                   <input
                     id="Aria2Token"
@@ -488,7 +558,7 @@
               <div class="collapse-content">
                 <div class="form-control w-full">
                   <label class="label" for="DelugeURL"
-                    ><span class="label-text">JSON-RPC URL</span></label
+                    ><span class="label-text">{{ t .lang "json_rpc_url" }}</span></label
                   >
                   <input
                     id="DelugeURL"
@@ -501,7 +571,7 @@
                 </div>
                 <div class="form-control w-full">
                   <label class="label" for="DelugePass"
-                    ><span class="label-text">Password</span></label
+                    ><span class="label-text">{{ t .lang "password" }}</span></label
                   >
                   <input
                     id="DelugePass"
@@ -524,7 +594,7 @@
               <div class="collapse-content">
                 <div class="form-control w-full">
                   <label class="label" for="QBittorrentURL"
-                    ><span class="label-text">Web UI URL</span></label
+                    ><span class="label-text">{{ t .lang "web_ui_url" }}</span></label
                   >
                   <input
                     id="QBittorrentURL"
@@ -538,7 +608,7 @@
                 <div class="grid grid-cols-2 gap-4">
                   <div class="form-control w-full">
                     <label class="label" for="QBittorrentUser"
-                      ><span class="label-text">Username</span></label
+                      ><span class="label-text">{{ t $.lang "username" }}</span></label
                     >
                     <input
                       id="QBittorrentUser"
@@ -550,7 +620,7 @@
                   </div>
                   <div class="form-control w-full">
                     <label class="label" for="QBittorrentPass"
-                      ><span class="label-text">Password</span></label
+                      ><span class="label-text">{{ t $.lang "password" }}</span></label
                     >
                     <input
                       id="QBittorrentPass"
@@ -585,7 +655,7 @@
                 d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
               />
             </svg>
-            <h2 class="card-title text-2xl">Notifications</h2>
+            <h2 class="card-title text-2xl">{{ t .lang "notifications" }}</h2>
           </div>
 
           <div class="space-y-4">
@@ -599,7 +669,7 @@
               <div class="collapse-content">
                 <div class="form-control w-full">
                   <label class="label" for="TelegramToken"
-                    ><span class="label-text">Bot Token</span></label
+                    ><span class="label-text">{{ t .lang "bot_token" }}</span></label
                   >
                   <input
                     id="TelegramToken"
@@ -611,7 +681,7 @@
                 </div>
                 <div class="form-control w-full">
                   <label class="label" for="TelegramUsername"
-                    ><span class="label-text">Target Username</span></label
+                    ><span class="label-text">{{ t .lang "target_username" }}</span></label
                   >
                   <input
                     id="TelegramUsername"
@@ -634,7 +704,7 @@
               <div class="collapse-content">
                 <div class="form-control w-full">
                   <label class="label" for="DiscordWebhook"
-                    ><span class="label-text">Webhook URL</span></label
+                    ><span class="label-text">{{ t .lang "webhook_url" }}</span></label
                   >
                   <input
                     id="DiscordWebhook"
@@ -657,7 +727,7 @@
               <div class="collapse-content">
                 <div class="form-control w-full">
                   <label class="label" for="SlackWebhook"
-                    ><span class="label-text">Webhook URL</span></label
+                    ><span class="label-text">{{ t .lang "webhook_url" }}</span></label
                   >
                   <input
                     id="SlackWebhook"
@@ -680,7 +750,7 @@
               <div class="collapse-content">
                 <div class="form-control w-full">
                   <label class="label" for="GotifyURL"
-                    ><span class="label-text">URL</span></label
+                    ><span class="label-text">{{ t .lang "url" }}</span></label
                   >
                   <input
                     id="GotifyURL"
@@ -692,7 +762,7 @@
                 </div>
                 <div class="form-control w-full">
                   <label class="label" for="GotifyToken"
-                    ><span class="label-text">Token</span></label
+                    ><span class="label-text">{{ t .lang "token" }}</span></label
                   >
                   <input
                     id="GotifyToken"
@@ -711,13 +781,35 @@
       <!-- Global Actions -->
       <div class="md:col-span-2 flex justify-end gap-4 mt-4">
         <button type="reset" class="btn btn-ghost btn-lg px-8">
-          Reset Changes
+          {{ t .lang "reset_changes" }}
         </button>
         <button type="submit" class="btn btn-primary btn-lg px-8 shadow-lg">
-          Save All Settings
+          {{ t .lang "save_all_settings" }}
         </button>
       </div>
     </form>
+    <div class="md:col-span-2 card bg-error/5 border border-error/20 shadow-xl">
+      <div class="card-body">
+        <h2 class="card-title text-error">{{ t .lang "danger_zone" }}</h2>
+        <p class="text-sm text-base-content/60">{{ t .lang "clear_data_hint" }}</p>
+        {{ if .clearError }}
+        <div class="alert alert-error">
+          <span>{{ .clearError }}</span>
+        </div>
+        {{ end }}
+        <form action="/data/clear" method="POST" class="flex flex-col md:flex-row gap-3 md:items-end">
+          <div class="form-control flex-1">
+            <label class="label" for="clear-confirm">
+              <span class="label-text">{{ t .lang "clear_data_confirm" }}</span>
+            </label>
+            <input id="clear-confirm" name="confirm" class="input input-bordered" placeholder="CLEAR" autocomplete="off" />
+          </div>
+          <button type="submit" class="btn btn-error" onclick="return confirm('{{ t .lang "clear_data_prompt" }}')">
+            {{ t .lang "clear_data" }}
+          </button>
+        </form>
+      </div>
+    </div>
   </div>
 </div>
 {{ end }}

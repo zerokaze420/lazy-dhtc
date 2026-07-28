@@ -24,7 +24,7 @@ func NewSink(deadline time.Duration, maxNLeeches int, maxConcurrentDownloads int
 
 func (ms *Sink) Sink(res Result) {
 	if ms.terminated.Load() {
-		log.Panic().Msg("Trying to Sink() an already closed Sink!")
+		return
 	}
 	ms.incomingInfoHashesMx.Lock()
 	defer ms.incomingInfoHashesMx.Unlock()
@@ -48,6 +48,10 @@ func (ms *Sink) Sink(res Result) {
 }
 
 func (ms *Sink) download(infoHash []byte, peer net.TCPAddr) {
+	if ms.terminated.Load() {
+		return
+	}
+
 	ms.downloadSem <- struct{}{}
 	defer func() { <-ms.downloadSem }()
 
@@ -71,7 +75,7 @@ func (ms *Sink) onPeers(infoHash []byte, peers []net.TCPAddr) {
 
 func (ms *Sink) Drain() <-chan Metadata {
 	if ms.terminated.Load() {
-		log.Panic().Msg("Trying to Drain() an already closed Sink!")
+		return ms.drain
 	}
 	return ms.drain
 }
@@ -104,6 +108,10 @@ func (ms *Sink) flush(result Metadata) {
 }
 
 func (ms *Sink) onLeechError(infoHash []byte, err error) {
+	if ms.terminated.Load() {
+		return
+	}
+
 	log.Debug().Err(err)
 
 	ms.incomingInfoHashesMx.Lock()

@@ -23,6 +23,8 @@ vendor/
 # Build artifacts
 /.output.txt
 ui/static/css/style.css
+.lzc-cli-cache/
+dist-lpk/*.lpk
 
 # Databases and data
 *.db

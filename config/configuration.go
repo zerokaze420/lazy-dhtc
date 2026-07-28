@@ -26,13 +26,17 @@ type Configuration struct {
 
 	SafeMode bool `form:"SafeMode"`
 
-	CrawlerThreads         int `form:"CrawlerThreads"`
-	MaxConcurrentDownloads int `form:"MaxConcurrentDownloads"`
-	RateLimit              int `form:"RateLimit"`
+	CrawlerThreads         int  `form:"CrawlerThreads"`
+	MaxConcurrentDownloads int  `form:"MaxConcurrentDownloads"`
+	RateLimit              int  `form:"RateLimit"`
+	CrawlerAutoStopMinutes int  `form:"CrawlerAutoStopMinutes"`
+	CrawlerStartOnLaunch   bool `form:"CrawlerStartOnLaunch"`
+	MaxSavedTorrents       int  `form:"MaxSavedTorrents"`
 
-	EnableBlacklist bool   `form:"EnableBlacklist"`
-	NameBlacklist   string `form:"NameBlacklist"`
-	FileBlacklist   string `form:"FileBlacklist"`
+	EnableBlacklist    bool   `form:"EnableBlacklist"`
+	NameBlacklist      string `form:"NameBlacklist"`
+	FileBlacklist      string `form:"FileBlacklist"`
+	OnlyChineseContent bool   `form:"OnlyChineseContent"`
 
 	Statistics bool `form:"Statistics"`
 
@@ -83,10 +87,14 @@ func ParseArguments() *Configuration {
 	flag.IntVar(&config.CrawlerThreads, "CrawlerThreads", 2, "dht crawler threads")
 	flag.IntVar(&config.MaxConcurrentDownloads, "MaxConcurrentDownloads", 10, "max. concurrent metadata downloads")
 	flag.IntVar(&config.RateLimit, "RateLimit", 100, "max. outgoing UDP packets per second per crawler")
+	flag.IntVar(&config.CrawlerAutoStopMinutes, "CrawlerAutoStopMinutes", 0, "automatically stop crawler after N minutes (0 disables auto-stop)")
+	flag.BoolVar(&config.CrawlerStartOnLaunch, "CrawlerStartOnLaunch", false, "start crawler automatically when the app launches")
+	flag.IntVar(&config.MaxSavedTorrents, "MaxSavedTorrents", 20000, "maximum saved torrents before pruning oldest entries (0 disables pruning)")
 
 	flag.BoolVar(&config.EnableBlacklist, "EnableBlacklist", false, "enable blacklists")
 	flag.StringVar(&config.NameBlacklist, "NameBlacklist", "", "blacklist for torrent names")
 	flag.StringVar(&config.FileBlacklist, "FileBlacklist", "", "blacklist for file names")
+	flag.BoolVar(&config.OnlyChineseContent, "OnlyChineseContent", false, "only store torrents whose name or file paths contain Chinese characters")
 
 	flag.BoolVar(&config.Statistics, "Statistics", false, "enable Statistics (dashboard)")
 

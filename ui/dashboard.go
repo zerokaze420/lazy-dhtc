@@ -12,5 +12,8 @@ func (c *Controller) Dashboard(ctx *gin.Context) {
 	h["info_hash_count"] = c.Database.GetInfoHashCount()
 	h["statistics"] = c.Configuration.Statistics
 	h["catDist"] = catDist
+	if c.Crawler != nil {
+		h["crawler"] = c.Crawler.Status()
+	}
 	ctx.HTML(http.StatusOK, "dashboard", h)
 }

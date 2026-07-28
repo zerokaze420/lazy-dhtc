@@ -7,14 +7,14 @@
     class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4"
   >
     <div>
-      <h1 class="text-4xl font-extrabold tracking-tight">Discover</h1>
+      <h1 class="text-4xl font-extrabold tracking-tight">{{ t .lang .titleKey }}</h1>
       <p class="text-base-content/60">
-        Explore the latest additions to the database
+        {{ t .lang .subtitleKey }}
       </p>
     </div>
     <form action="/discover" method="post" class="flex items-center gap-2">
       <label class="label p-0" for="limit-selector">
-        <span class="label-text mr-2">Limit</span>
+        <span class="label-text mr-2">{{ t .lang "limit" }}</span>
       </label>
       <div class="join">
         <select
@@ -35,7 +35,7 @@
           </option>
         </select>
         <button type="submit" class="btn btn-primary btn-sm join-item">
-          Randomize
+          {{ t .lang "randomize" }}
         </button>
       </div>
     </form>

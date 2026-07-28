@@ -4,14 +4,12 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog/log"
 )
 
 func (c *Controller) BlacklistGet(ctx *gin.Context) {
-	ctx.HTML(http.StatusOK, "blacklist", gin.H{
-		"path":    ctx.FullPath(),
-		"results": c.Database.GetBlacklistEntries(),
-	})
+	h := c.getCommonH(ctx)
+	h["results"] = c.Database.GetBlacklistEntries()
+	ctx.HTML(http.StatusOK, "blacklist", h)
 }
 
 func (c *Controller) BlacklistPost(ctx *gin.Context) {
@@ -29,12 +27,9 @@ func (c *Controller) BlacklistPost(ctx *gin.Context) {
 		opOk = true
 	}
 
-	log.Print(opOk)
-
-	ctx.HTML(http.StatusOK, "blacklist", gin.H{
-		"path":    ctx.FullPath(),
-		"op":      op,
-		"opOk":    opOk,
-		"results": c.Database.GetBlacklistEntries(),
-	})
+	h := c.getCommonH(ctx)
+	h["op"] = op
+	h["opOk"] = opOk
+	h["results"] = c.Database.GetBlacklistEntries()
+	ctx.HTML(http.StatusOK, "blacklist", h)
 }

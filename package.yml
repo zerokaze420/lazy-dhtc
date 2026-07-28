@@ -1,0 +1,20 @@
+package: cloud.lazycat.app.dhtc
+version: 1.0.12
+name: dhtc
+description: Build a private BitTorrent DHT crawler and torrent search engine.
+author: nbdy
+license: MIT
+homepage: https://github.com/nbdy/dhtc
+min_os_version: 1.5.2
+permissions:
+  required:
+    - net.internet
+  optional:
+    - net.lan
+locales:
+  zh-CN:
+    name: dhtc
+    description: 私有 BitTorrent DHT 爬虫和种子搜索引擎。
+  en-US:
+    name: dhtc
+    description: Build a private BitTorrent DHT crawler and torrent search engine.

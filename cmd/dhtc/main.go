@@ -5,10 +5,8 @@ import (
 	"dhtc/cache"
 	"dhtc/config"
 	"dhtc/db"
-	dhtcclient "dhtc/dhtc-client"
 	"dhtc/notifier"
 	"dhtc/ui"
-	"fmt"
 	"os"
 	"time"
 
@@ -42,36 +40,6 @@ func ReadFileLines(filePath string) []string {
 	}
 
 	return rVal
-}
-
-func crawl(configuration *config.Configuration, bootstrapNodes []string, database db.Repository, nManager *notifier.Manager, hub *ui.Hub) {
-	indexerAddrs := []string{"0.0.0.0:0"}
-	interruptChan := make(chan os.Signal, 1)
-
-	trawlingManager := dhtcclient.NewManager(bootstrapNodes, indexerAddrs, 10*time.Second, configuration.MaxNeighbors, configuration.RateLimit)
-	metadataSink := dhtcclient.NewSink(configuration.DrainTimeout, configuration.MaxLeeches, configuration.MaxConcurrentDownloads)
-
-	for stopped := false; !stopped; {
-		select {
-		case result := <-trawlingManager.Output():
-			hash := result.InfoHash()
-
-			if cache.InfoHashCacheAdd(string(hash)) {
-				metadataSink.Sink(result)
-			}
-
-		case md := <-metadataSink.Drain():
-			if database.InsertMetadata(md) {
-				fmt.Println("\t + Added:", md.Name)
-				db.CheckWatches(configuration, database, md, nManager)
-				hub.BroadcastMetadata(md)
-			}
-
-		case <-interruptChan:
-			trawlingManager.Terminate()
-			stopped = true
-		}
-	}
 }
 
 func collectStats(database db.Repository) {
@@ -115,17 +83,19 @@ func main() {
 	go hub.Run()
 
 	var nManager *notifier.Manager
+	crawler := ui.NewCrawlerManager(cfg, bootstrapNodes, database, nManager, hub)
 	if !cfg.OnlyWebServer {
 		nManager = notifier.SetupNotifiers(cfg)
+		crawler = ui.NewCrawlerManager(cfg, bootstrapNodes, database, nManager, hub)
 
 		if cfg.Statistics {
 			go collectStats(database)
 		}
 
-		for range cfg.CrawlerThreads {
-			go crawl(cfg, bootstrapNodes, database, nManager, hub)
+		if cfg.CrawlerStartOnLaunch {
+			crawler.Start()
 		}
 	}
 
-	ui.RunWebServer(cfg, database, hub, nManager)
+	ui.RunWebServer(cfg, database, hub, nManager, crawler)
 }

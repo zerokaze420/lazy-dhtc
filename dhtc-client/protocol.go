@@ -77,9 +77,10 @@ func (p *Protocol) Start() {
 // Terminate terminates the DHT protocol handler.
 func (p *Protocol) Terminate() {
 	if !p.started {
-		log.Panic().Msg("Attempted to Terminate() a mainline/Protocol that has not been Start()ed! (Programmer error.)")
+		return
 	}
 
+	p.started = false
 	p.transport.Terminate()
 }
 
@@ -204,6 +205,9 @@ func (p *Protocol) onMessage(msg *Message, addr *net.UDPAddr) {
 
 // SendMessage sends a KRPC message to the specified address.
 func (p *Protocol) SendMessage(msg *Message, addr *net.UDPAddr) {
+	if !p.started {
+		return
+	}
 	p.transport.WriteMessages(msg, addr)
 }
 

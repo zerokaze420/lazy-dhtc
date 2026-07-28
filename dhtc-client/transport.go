@@ -3,6 +3,7 @@ package dhtc_client
 import (
 	"context"
 	"net"
+	"sync"
 
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/rs/zerolog/log"
@@ -23,6 +24,8 @@ type Transport struct {
 
 	limiter  *rate.Limiter
 	sendChan chan sendRequest
+	done     chan struct{}
+	stopOnce sync.Once
 
 	// OnMessage is the function that will be called when Transport receives a packet that is
 	// successfully unmarshalled as a syntactically correct Message (but, of course, checking
@@ -54,6 +57,7 @@ func NewTransport(laddr string, rateLimit int, onMessage func(*Message, *net.UDP
 		t.limiter = rate.NewLimiter(rate.Limit(rateLimit), rateLimit)
 	}
 	t.sendChan = make(chan sendRequest, 2048)
+	t.done = make(chan struct{})
 
 	var err error
 	t.laddr, err = net.ResolveUDPAddr("udp", laddr)
@@ -94,14 +98,27 @@ func (t *Transport) Start() {
 
 // Terminate terminates the DHT transport layer.
 func (t *Transport) Terminate() {
-	_ = t.fd.Close()
-	close(t.sendChan)
+	t.stopOnce.Do(func() {
+		close(t.done)
+		if t.fd != nil {
+			_ = t.fd.Close()
+		}
+	})
 }
 
 // readMessages is a goroutine!
 func (t *Transport) readMessages() {
 	for {
 		n, fromSA, err := t.fd.ReadFromUDP(t.buffer)
+		if err != nil {
+			select {
+			case <-t.done:
+				return
+			default:
+				log.Warn().Err(err).Msg("Could NOT read an UDP packet!")
+				continue
+			}
+		}
 
 		if n == 0 {
 			/* Datagram sockets in various domains  (e.g., the UNIX and Internet domains) permit
@@ -124,6 +141,8 @@ func (t *Transport) readMessages() {
 // WriteMessages writes a KRPC message to the specified address.
 func (t *Transport) WriteMessages(msg *Message, addr *net.UDPAddr) {
 	select {
+	case <-t.done:
+		return
 	case t.sendChan <- sendRequest{msg, addr}:
 	default:
 		// Drop message if channel is full
@@ -131,10 +150,42 @@ func (t *Transport) WriteMessages(msg *Message, addr *net.UDPAddr) {
 }
 
 func (t *Transport) sendLoop() {
-	for req := range t.sendChan {
-		if t.limiter != nil {
-			_ = t.limiter.Wait(context.Background())
+	for {
+		select {
+		case <-t.done:
+			return
+		case req := <-t.sendChan:
+			select {
+			case <-t.done:
+				return
+			default:
+			}
+			t.send(req)
 		}
+	}
+}
+
+func (t *Transport) send(req sendRequest) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if t.limiter != nil {
+		go func() {
+			select {
+			case <-t.done:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+		if err := t.limiter.Wait(ctx); err != nil {
+			return
+		}
+	}
+
+	select {
+	case <-t.done:
+		return
+	default:
 		t.writeImmediately(req.msg, req.addr)
 	}
 }
@@ -147,6 +198,11 @@ func (t *Transport) writeImmediately(msg *Message, addr *net.UDPAddr) {
 
 	_, err = t.fd.WriteToUDP(data, addr)
 	if err != nil {
+		select {
+		case <-t.done:
+			return
+		default:
+		}
 		log.Warn().Msg("Could NOT write an UDP packet!")
 		log.Warn().Err(err)
 	}

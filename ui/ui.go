@@ -21,6 +21,7 @@ type Controller struct {
 	Configuration *config.Configuration
 	Hub           *Hub
 	Notifier      *notifier.Manager
+	Crawler       *CrawlerManager
 }
 
 func loadTemplates() multitemplate.Render {
@@ -30,6 +31,7 @@ func loadTemplates() multitemplate.Render {
 		"add": func(a, b int) int {
 			return a + b
 		},
+		"t": translate,
 	}
 
 	viewDirectory, _ := templates.ReadDir("templates/view")
@@ -53,13 +55,17 @@ func loadTemplates() multitemplate.Render {
 }
 
 func (c *Controller) getCommonH(ctx *gin.Context) gin.H {
+	lang := detectLanguage(ctx)
 	return gin.H{
 		"path":   ctx.FullPath(),
 		"config": c.Configuration,
+		"lang":   lang,
+		"zhURL":  languageURL(ctx, chineseLanguage),
+		"enURL":  languageURL(ctx, defaultLanguage),
 	}
 }
 
-func RunWebServer(configuration *config.Configuration, database db.Repository, hub *Hub, nManager *notifier.Manager) {
+func RunWebServer(configuration *config.Configuration, database db.Repository, hub *Hub, nManager *notifier.Manager, crawler *CrawlerManager) {
 	// gin.SetMode(gin.ReleaseMode)
 
 	srv := gin.Default()
@@ -80,6 +86,7 @@ func RunWebServer(configuration *config.Configuration, database db.Repository, h
 		Configuration: configuration,
 		Hub:           hub,
 		Notifier:      nManager,
+		Crawler:       crawler,
 	}
 
 	srv.GET("", uiCtrl.Dashboard)
@@ -88,12 +95,15 @@ func RunWebServer(configuration *config.Configuration, database db.Repository, h
 	srv.POST("/search", uiCtrl.SearchPost)
 	srv.GET("/discover", uiCtrl.DiscoverGet)
 	srv.POST("/discover", uiCtrl.DiscoverPost)
+	srv.POST("/data/clear", uiCtrl.ClearDataPost)
 	srv.GET("/watches", uiCtrl.WatchGet)
 	srv.POST("/watches", uiCtrl.WatchPost)
 	srv.GET("/blacklist", uiCtrl.BlacklistGet)
 	srv.POST("/blacklist", uiCtrl.BlacklistPost)
 	srv.GET("/settings", uiCtrl.SettingsGet)
 	srv.POST("/settings", uiCtrl.SettingsPost)
+	srv.POST("/crawler/start", uiCtrl.CrawlerStart)
+	srv.POST("/crawler/stop", uiCtrl.CrawlerStop)
 	srv.GET("/trawl", uiCtrl.Trawl)
 	srv.GET("/ws/trawl", func(c *gin.Context) {
 		uiCtrl.HandleWebSocket(c.Writer, c.Request)
@@ -107,6 +117,8 @@ func RunWebServer(configuration *config.Configuration, database db.Repository, h
 	srv.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+	srv.GET("/mcp", uiCtrl.MCP)
+	srv.POST("/mcp", uiCtrl.MCP)
 
 	api := srv.Group("/api")
 	{

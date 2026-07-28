@@ -7,12 +7,12 @@
     class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4"
   >
     <div>
-      <h1 class="text-4xl font-extrabold tracking-tight">Dashboard</h1>
-      <p class="text-base-content/60">Overview of your DHT crawler activity</p>
+      <h1 class="text-4xl font-extrabold tracking-tight">{{ t .lang "dashboard" }}</h1>
+      <p class="text-base-content/60">{{ t .lang "overview_activity" }}</p>
     </div>
     <div class="stats shadow bg-base-100">
       <div class="stat">
-        <div class="stat-title text-sm opacity-70">Total Torrents</div>
+        <div class="stat-title text-sm opacity-70">{{ t .lang "total_torrents" }}</div>
         <div class="stat-value text-primary font-mono">
           {{ .info_hash_count }}
         </div>
@@ -20,24 +20,59 @@
     </div>
   </div>
 
+  {{ if .crawler }}
+  <div class="card bg-base-100 shadow-xl border border-base-300 mb-8">
+    <div class="card-body p-4 sm:p-6">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 class="card-title text-lg">{{ t .lang "crawler_control" }}</h2>
+          <p class="text-sm text-base-content/60">
+            {{ if .crawler.Running }}
+              {{ t .lang "crawler_running" }}
+            {{ else }}
+              {{ t .lang "crawler_stopped" }}
+            {{ end }}
+          </p>
+          {{ if .crawler.AutoStopAt.IsZero }}{{ else }}
+          <p class="text-xs text-base-content/50 mt-1">
+            {{ t .lang "crawler_auto_stop_at" }} {{ .crawler.AutoStopAt.Format "2006-01-02 15:04:05" }}
+          </p>
+          {{ end }}
+        </div>
+        <div class="flex gap-2">
+          {{ if .crawler.Running }}
+          <form action="/crawler/stop" method="post">
+            <button class="btn btn-error" type="submit">{{ t .lang "stop_crawling" }}</button>
+          </form>
+          {{ else }}
+          <form action="/crawler/start" method="post">
+            <button class="btn btn-primary" type="submit">{{ t .lang "start_crawling" }}</button>
+          </form>
+          {{ end }}
+        </div>
+      </div>
+    </div>
+  </div>
+  {{ end }}
+
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
     <div class="card bg-base-100 shadow-xl border border-base-300">
       <div class="card-body p-4 sm:p-6">
         <div class="flex justify-between items-center mb-4">
-          <h2 class="card-title text-lg">Discovery Timeline</h2>
+          <h2 class="card-title text-lg">{{ t .lang "discovery_timeline" }}</h2>
           <div class="flex items-center gap-2">
             <label
               for="granularitySelector"
               class="label-text text-xs opacity-70"
-              >Interval:</label
+              >{{ t .lang "interval" }}</label
             >
             <select
               id="granularitySelector"
               class="select select-bordered select-sm w-fit pr-10"
             >
-              <option value="minute">Last Hour (Minutely)</option>
-              <option value="hour" selected>Last 24 Hours (Hourly)</option>
-              <option value="day">Last 30 Days (Daily)</option>
+              <option value="minute">{{ t .lang "latest_hour" }}</option>
+              <option value="hour" selected>{{ t .lang "latest_day" }}</option>
+              <option value="day">{{ t .lang "latest_month" }}</option>
             </select>
           </div>
         </div>
@@ -59,7 +94,7 @@
               d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
             />
           </svg>
-          <p>No discovery data available yet</p>
+          <p>{{ t .lang "no_discovery_data" }}</p>
         </div>
         <div
           class="relative w-full h-[400px] {{ if le .info_hash_count 0 }}hidden{{ end }}"
@@ -71,7 +106,7 @@
 
     <div class="card bg-base-100 shadow-xl border border-base-300">
       <div class="card-body p-4 sm:p-6">
-        <h2 class="card-title text-lg mb-4">Category Distribution</h2>
+        <h2 class="card-title text-lg mb-4">{{ t .lang "category_distribution" }}</h2>
         {{ if .catDist }}
         <div class="relative w-full flex justify-center h-[400px]">
           <canvas id="categoryChart"></canvas>
@@ -80,7 +115,7 @@
         <div
           class="flex flex-col items-center justify-center h-[400px] opacity-40"
         >
-          <p>No categories found</p>
+          <p>{{ t .lang "no_categories" }}</p>
         </div>
         {{ end }}
       </div>
@@ -191,7 +226,7 @@
               labels: labels,
               datasets: [
                 {
-                  label: "New Torrents",
+                  label: "{{ t .lang "new_torrents" }}",
                   data: rates,
                   fill: true,
                   backgroundColor: "rgba(54, 162, 235, 0.1)",

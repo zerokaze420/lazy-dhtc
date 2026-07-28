@@ -11,8 +11,8 @@
 {{ define "body" }}
 <div class="container mx-auto p-4 md:p-8">
     <div class="mb-8">
-        <h1 class="text-4xl font-extrabold tracking-tight">Search</h1>
-        <p class="text-base-content/60">Search through the collected torrent metadata</p>
+        <h1 class="text-4xl font-extrabold tracking-tight">{{ t .lang "search" }}</h1>
+        <p class="text-base-content/60">{{ t .lang "search_subtitle" }}</p>
     </div>
 
     <div class="card bg-base-100 shadow-xl border border-base-300 mb-8">
@@ -21,36 +21,36 @@
                 <div class="flex flex-col lg:flex-row gap-4 items-end mb-4">
                     <div class="form-control w-full lg:w-48">
                         <label class="label pt-0" for="search-key">
-                            <span class="label-text font-semibold">Field</span>
+                            <span class="label-text font-semibold">{{ t .lang "field" }}</span>
                         </label>
                         <select id="search-key" class="select select-bordered select-sm w-full pr-10" name="key">
-                            <option value="All" {{ if eq .key "All" }}selected{{ end }}>All</option>
-                            <option value="Name" {{ if eq .key "Name" }}selected{{ end }}>Name</option>
-                            <option value="InfoHash" {{ if eq .key "InfoHash" }}selected{{ end }}>Info hash</option>
-                            <option value="Files" {{ if eq .key "Files" }}selected{{ end }}>File name</option>
-                            <option value="DiscoveredOn" {{ if eq .key "DiscoveredOn" }}selected{{ end }}>Date</option>
+                            <option value="All" {{ if eq .key "All" }}selected{{ end }}>{{ t .lang "all" }}</option>
+                            <option value="Name" {{ if eq .key "Name" }}selected{{ end }}>{{ t .lang "name" }}</option>
+                            <option value="InfoHash" {{ if eq .key "InfoHash" }}selected{{ end }}>{{ t .lang "info_hash" }}</option>
+                            <option value="Files" {{ if eq .key "Files" }}selected{{ end }}>{{ t .lang "file_name" }}</option>
+                            <option value="DiscoveredOn" {{ if eq .key "DiscoveredOn" }}selected{{ end }}>{{ t .lang "date" }}</option>
                         </select>
                     </div>
 
                     <div class="form-control w-full lg:w-48">
                         <label class="label pt-0" for="match-type">
-                            <span class="label-text font-semibold">Match Type</span>
+                            <span class="label-text font-semibold">{{ t .lang "match_type" }}</span>
                         </label>
                         <select id="match-type" class="select select-bordered select-sm w-full pr-10" name="match-type">
-                            <option value="contains" {{ if eq .matchType "contains" }}selected{{ end }}>contains</option>
-                            <option value="equals" {{ if eq .matchType "equals" }}selected{{ end }}>equals</option>
-                            <option value="startswith" {{ if eq .matchType "startswith" }}selected{{ end }}>starts with</option>
-                            <option value="endswith" {{ if eq .matchType "endswith" }}selected{{ end }}>ends with</option>
+                            <option value="contains" {{ if eq .matchType "contains" }}selected{{ end }}>{{ t .lang "contains" }}</option>
+                            <option value="equals" {{ if eq .matchType "equals" }}selected{{ end }}>{{ t .lang "equals" }}</option>
+                            <option value="startswith" {{ if eq .matchType "startswith" }}selected{{ end }}>{{ t .lang "starts_with" }}</option>
+                            <option value="endswith" {{ if eq .matchType "endswith" }}selected{{ end }}>{{ t .lang "ends_with" }}</option>
                         </select>
                     </div>
 
                     <div class="form-control flex-grow w-full">
                         <label class="label pt-0" for="search-input">
-                            <span class="label-text font-semibold">Search Query</span>
+                            <span class="label-text font-semibold">{{ t .lang "search_query" }}</span>
                         </label>
                         <div class="join w-full">
-                            <input id="search-input" type="text" placeholder="Search..." class="input input-bordered input-sm join-item w-full" name="search-input" value="{{.searchInput}}" />
-                            <button class="btn btn-primary btn-sm join-item px-6" type="submit">Search</button>
+                            <input id="search-input" type="text" placeholder="{{ t .lang "search_placeholder" }}" class="input input-bordered input-sm join-item w-full" name="search-input" value="{{.searchInput}}" />
+                            <button class="btn btn-primary btn-sm join-item px-6" type="submit">{{ t .lang "search" }}</button>
                         </div>
                     </div>
                 </div>
@@ -58,31 +58,31 @@
                 <div class="collapse collapse-plus bg-base-200/30 border border-base-300 rounded-lg">
                     <input id="advanced-filters-toggle" type="checkbox" />
                     <label for="advanced-filters-toggle" class="collapse-title text-sm font-medium py-2 min-h-0">
-                        Advanced Filters
+                        {{ t .lang "advanced_filters" }}
                     </label>
                     <div class="collapse-content">
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
                             <div class="form-control w-full">
                                 <label class="label" for="min-size">
-                                    <span class="label-text text-xs">Min Size (bytes)</span>
+                                    <span class="label-text text-xs">{{ t .lang "min_size_bytes" }}</span>
                                 </label>
                                 <input id="min-size" type="number" name="min-size" class="input input-bordered input-sm" value="{{.minSize}}" />
                             </div>
                             <div class="form-control w-full">
                                 <label class="label" for="max-size">
-                                    <span class="label-text text-xs">Max Size (bytes)</span>
+                                    <span class="label-text text-xs">{{ t .lang "max_size_bytes" }}</span>
                                 </label>
                                 <input id="max-size" type="number" name="max-size" class="input input-bordered input-sm" value="{{.maxSize}}" />
                             </div>
                             <div class="form-control w-full">
                                 <label class="label" for="start-date-val">
-                                    <span class="label-text text-xs">Start Date</span>
+                                    <span class="label-text text-xs">{{ t .lang "start_date" }}</span>
                                 </label>
                                 <input id="start-date-val" type="date" name="start-date-val" class="input input-bordered input-sm" value="{{.startDateVal}}" />
                             </div>
                             <div class="form-control w-full">
                                 <label class="label" for="end-date-val">
-                                    <span class="label-text text-xs">End Date</span>
+                                    <span class="label-text text-xs">{{ t .lang "end_date" }}</span>
                                 </label>
                                 <input id="end-date-val" type="date" name="end-date-val" class="input input-bordered input-sm" value="{{.endDateVal}}" />
                             </div>
@@ -95,7 +95,7 @@
 
     {{ if .results }}
         <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-bold">Results ({{ .total }})</h2>
+            <h2 class="text-xl font-bold">{{ t .lang "results" }} ({{ .total }})</h2>
         </div>
         {{ template "torrent_table" . }}
         {{ template "pagination" . }}
