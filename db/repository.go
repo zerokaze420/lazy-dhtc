@@ -6,6 +6,7 @@ import (
 
 type Repository interface {
 	GetInfoHashCount() int
+	GetFamilyCounts() (ipv4, ipv6, unknown int64)
 	FindBy(key string, searchType string, searchInput string) []MetaData
 	Search(key string, searchType string, searchInput string, limit int, offset int, filters SearchFilters) ([]MetaData, int64, error)
 	GetNRandomEntries(n int) []MetaData

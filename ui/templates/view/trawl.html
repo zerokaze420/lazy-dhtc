@@ -64,6 +64,9 @@
       const date = new Date(md.DiscoveredOn * 1000).toLocaleString();
       const infoHashHex = md.InfoHashHex;
       const magnet = `magnet:?xt=urn:btih:${infoHashHex}&dn=${encodeURIComponent(md.Name)}`;
+      const familyBadge = md.Family === 6
+          ? '<span class="badge badge-success badge-sm">V6</span>'
+          : '<span class="badge badge-info badge-sm">V4</span>';
 
       let actionHtml = `
           <div class="join join-vertical md:join-horizontal">
@@ -88,7 +91,7 @@
       const categoriesHtml = md.Categories ? md.Categories.map(cat => `<div class="badge badge-outline badge-sm">${cat}</div>`).join('') : '';
 
       row.innerHTML = `
-          <td class="whitespace-normal break-all font-medium">${md.Name}</td>
+          <td class="whitespace-normal break-all font-medium"><div class="flex items-center gap-2">${md.Name} ${familyBadge}</div></td>
           <td class="hidden md:table-cell"><div class="flex flex-wrap gap-1">${categoriesHtml}</div></td>
           <td data-sort="${md.TotalSize}" class="font-mono text-sm">${size}</td>
           <td class="hidden lg:table-cell text-center">${md.Files ? md.Files.length : 0}</td>

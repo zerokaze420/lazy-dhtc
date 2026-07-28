@@ -10,12 +10,20 @@
       <h1 class="text-4xl font-extrabold tracking-tight">{{ t .lang "dashboard" }}</h1>
       <p class="text-base-content/60">{{ t .lang "overview_activity" }}</p>
     </div>
-    <div class="stats shadow bg-base-100">
+    <div class="stats stats-vertical sm:stats-horizontal shadow bg-base-100">
       <div class="stat">
         <div class="stat-title text-sm opacity-70">{{ t .lang "total_torrents" }}</div>
         <div class="stat-value text-primary font-mono">
           {{ .info_hash_count }}
         </div>
+      </div>
+      <div class="stat">
+        <div class="stat-title text-sm opacity-70">IPv4</div>
+        <div class="stat-value text-info font-mono text-2xl">{{ .ipv4_count }}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title text-sm opacity-70">IPv6</div>
+        <div class="stat-value text-success font-mono text-2xl">{{ .ipv6_count }}</div>
       </div>
     </div>
   </div>
@@ -168,9 +176,11 @@
               (d.getMonth() + 1).toString().padStart(2, "0")
             );
           });
-          const counts = stats.map((s) => s.TorrentCount);
+          const ipv4Counts = stats.map((s) => s.IPv4Count || 0);
+          const ipv6Counts = stats.map((s) => s.IPv6Count || 0);
+          const unknownCounts = stats.map((s) => s.UnknownCount || 0);
 
-          updateDiscoveryChart(labels, counts);
+          updateDiscoveryChart(labels, ipv4Counts, ipv6Counts, unknownCounts);
 
           document
             .getElementById("discoveryChartPlaceholder")
@@ -212,10 +222,12 @@
       }
     }
 
-    function updateDiscoveryChart(labels, rates) {
+    function updateDiscoveryChart(labels, ipv4Rates, ipv6Rates, unknownRates) {
       if (discoveryChart) {
         discoveryChart.data.labels = labels;
-        discoveryChart.data.datasets[0].data = rates;
+        discoveryChart.data.datasets[0].data = ipv4Rates;
+        discoveryChart.data.datasets[1].data = ipv6Rates;
+        discoveryChart.data.datasets[2].data = unknownRates;
         discoveryChart.update();
       } else {
         const ctx = document.getElementById("discoveryChart")?.getContext("2d");
@@ -226,21 +238,39 @@
               labels: labels,
               datasets: [
                 {
-                  label: "{{ t .lang "new_torrents" }}",
-                  data: rates,
-                  fill: true,
-                  backgroundColor: "rgba(54, 162, 235, 0.1)",
+                  label: "IPv4",
+                  data: ipv4Rates,
+                  fill: false,
                   borderColor: "rgb(54, 162, 235)",
                   tension: 0.3,
                   borderWidth: 3,
                   pointRadius: 2,
+                },
+                {
+                  label: "IPv6",
+                  data: ipv6Rates,
+                  fill: false,
+                  borderColor: "rgb(34, 197, 94)",
+                  tension: 0.3,
+                  borderWidth: 3,
+                  pointRadius: 2,
+                },
+                {
+                  label: "{{ t .lang "unknown_family" }}",
+                  data: unknownRates,
+                  fill: false,
+                  borderColor: "rgb(156, 163, 175)",
+                  tension: 0.3,
+                  borderWidth: 2,
+                  pointRadius: 1,
+                  hidden: unknownRates.every((value) => value === 0),
                 },
               ],
             },
             options: {
               maintainAspectRatio: false,
               responsive: true,
-              plugins: { legend: { display: false } },
+              plugins: { legend: { display: true, position: "bottom" } },
               scales: {
                 y: {
                   grid: { color: gridColor },

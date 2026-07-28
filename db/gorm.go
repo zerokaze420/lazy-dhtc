@@ -25,6 +25,7 @@ type GormTorrent struct {
 	DiscoveredOn int64  `gorm:"index"`
 	TotalSize    uint64
 	Categories   string `gorm:"column:category;index"`
+	Family       int    `gorm:"index"`
 }
 
 type GormWatch struct {
@@ -136,6 +137,13 @@ func (r *GormRepository) GetInfoHashCount() int {
 	var count int64
 	r.db.Model(&GormTorrent{}).Count(&count)
 	return int(count)
+}
+
+func (r *GormRepository) GetFamilyCounts() (ipv4, ipv6, unknown int64) {
+	r.db.Model(&GormTorrent{}).Where("family = ?", 4).Count(&ipv4)
+	r.db.Model(&GormTorrent{}).Where("family = ?", 6).Count(&ipv6)
+	r.db.Model(&GormTorrent{}).Where("family not in ? OR family IS NULL", []int{4, 6}).Count(&unknown)
+	return
 }
 
 func (r *GormRepository) applyNameSearch(query *gorm.DB, searchType string, searchInput string) *gorm.DB {
@@ -265,6 +273,7 @@ func (r *GormRepository) InsertMetadata(md dhtcclient.Metadata) bool {
 		DiscoveredOn: md.DiscoveredOn,
 		TotalSize:    md.TotalSize,
 		Categories:   strings.Join(Categorize(md), ","),
+		Family:       md.Family,
 	}
 
 	err := r.db.Create(&torrent).Error
@@ -368,6 +377,7 @@ func (r *GormRepository) toMetaDataSlice(torrents []GormTorrent) []MetaData {
 			TotalSize:    t.TotalSize,
 			Files:        files,
 			Categories:   strings.Split(t.Categories, ","),
+			Family:       t.Family,
 		}
 	}
 	return res
@@ -387,8 +397,11 @@ func (r *GormRepository) GetStatsByInterval(interval string, limit int) ([]Stats
 	since := now.Add(-time.Duration(limit) * duration).Unix()
 
 	type Result struct {
-		Bucket int64
-		Count  int64
+		Bucket       int64
+		Count        int64
+		IPv4Count    int64
+		IPv6Count    int64
+		UnknownCount int64
 	}
 	var results []Result
 
@@ -398,7 +411,7 @@ func (r *GormRepository) GetStatsByInterval(interval string, limit int) ([]Stats
 	}
 
 	err := r.db.Model(&GormTorrent{}).
-		Select(fmt.Sprintf("%s as bucket, count(*) as count", bucketExpr)).
+		Select(fmt.Sprintf("%s as bucket, count(*) as count, sum(case when family = 4 then 1 else 0 end) as ipv4_count, sum(case when family = 6 then 1 else 0 end) as ipv6_count, sum(case when family not in (4, 6) or family is null then 1 else 0 end) as unknown_count", bucketExpr)).
 		Where("discovered_on >= ?", since).
 		Group("bucket").
 		Scan(&results).Error
@@ -407,17 +420,21 @@ func (r *GormRepository) GetStatsByInterval(interval string, limit int) ([]Stats
 		return nil, err
 	}
 
-	bucketMap := make(map[int64]int64)
+	bucketMap := make(map[int64]Result)
 	for _, res := range results {
-		bucketMap[res.Bucket] = res.Count
+		bucketMap[res.Bucket] = res
 	}
 
 	res := make([]Stats, limit)
 	for i := range limit {
 		ts := now.Add(-time.Duration(i) * duration)
+		bucket := bucketMap[ts.Unix()]
 		res[i] = Stats{
 			Timestamp:    ts,
-			TorrentCount: bucketMap[ts.Unix()],
+			TorrentCount: bucket.Count,
+			IPv4Count:    bucket.IPv4Count,
+			IPv6Count:    bucket.IPv6Count,
+			UnknownCount: bucket.UnknownCount,
 		}
 	}
 

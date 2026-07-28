@@ -17,6 +17,7 @@ func NewSink(deadline time.Duration, maxNLeeches int, maxConcurrentDownloads int
 	ms.downloadSem = make(chan struct{}, maxConcurrentDownloads)
 	ms.drain = make(chan Metadata, 10)
 	ms.incomingInfoHashes = make(map[string][]netip.AddrPort)
+	ms.incomingFamilies = make(map[string]int)
 	ms.termination = make(chan any)
 
 	return ms
@@ -42,6 +43,7 @@ func (ms *Sink) Sink(res Result) {
 	} else if len(peerAddrs) > 0 {
 		peer := peerAddrs[0]
 		ms.incomingInfoHashes[string(infoHash)] = peerAddrs[1:]
+		ms.incomingFamilies[string(infoHash)] = res.Family()
 
 		go ms.download(infoHash, peer)
 	}
@@ -98,13 +100,13 @@ func (ms *Sink) flush(result Metadata) {
 		return
 	}
 
-	ms.drain <- result
-	// Delete the infoHash from ms.incomingInfoHashes ONLY AFTER once we've flushed the
-	// metadata!
 	ms.incomingInfoHashesMx.Lock()
-	defer ms.incomingInfoHashesMx.Unlock()
-
+	result.Family = ms.incomingFamilies[string(result.InfoHash)]
 	delete(ms.incomingInfoHashes, string(result.InfoHash))
+	delete(ms.incomingFamilies, string(result.InfoHash))
+	ms.incomingInfoHashesMx.Unlock()
+
+	ms.drain <- result
 }
 
 func (ms *Sink) onLeechError(infoHash []byte, err error) {
@@ -123,5 +125,6 @@ func (ms *Sink) onLeechError(infoHash []byte, err error) {
 		go ms.download(infoHash, peer)
 	} else {
 		delete(ms.incomingInfoHashes, string(infoHash))
+		delete(ms.incomingFamilies, string(infoHash))
 	}
 }

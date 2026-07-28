@@ -62,6 +62,7 @@ type SimpleTorrentSummary struct {
 
 type Metadata struct {
 	InfoHash []byte
+	Family   int
 	// Name should be thought of "Title" of the torrent. For single-file torrents, it is the name
 	// of the file, and for multi-file torrents, it is the name of the root directory.
 	Name         string
@@ -81,6 +82,7 @@ type Sink struct {
 	drainMx                sync.Mutex
 
 	incomingInfoHashes   map[string][]netip.AddrPort
+	incomingFamilies     map[string]int
 	incomingInfoHashesMx sync.Mutex
 
 	terminated  atomic.Bool

@@ -47,6 +47,7 @@ type IndexingServiceEventHandlers struct {
 type IndexingResult struct {
 	infoHash  []byte
 	peerAddrs []netip.AddrPort
+	family    int
 }
 
 func (ir IndexingResult) InfoHash() []byte {
@@ -55,6 +56,10 @@ func (ir IndexingResult) InfoHash() []byte {
 
 func (ir IndexingResult) PeerAddrs() []netip.AddrPort {
 	return ir.peerAddrs
+}
+
+func (ir IndexingResult) Family() int {
+	return ir.family
 }
 
 func NewIndexingService(network string, laddr string, cachePath string, interval time.Duration, maxNeighbors uint, rateLimit int, eventHandlers IndexingServiceEventHandlers) *IndexingService {
@@ -140,7 +145,7 @@ func (is *IndexingService) onAnnouncePeerQuery(msg *Message, addr netip.AddrPort
 	}
 	peer := netip.AddrPortFrom(addr.Addr(), port)
 	if is.eventHandlers.OnResult != nil {
-		is.eventHandlers.OnResult(IndexingResult{infoHash: append([]byte(nil), msg.A.InfoHash...), peerAddrs: []netip.AddrPort{peer}})
+		is.eventHandlers.OnResult(IndexingResult{infoHash: append([]byte(nil), msg.A.InfoHash...), peerAddrs: []netip.AddrPort{peer}, family: is.addressFamily()})
 	}
 	is.protocol.SendMessage(NewBasicResponse(msg.T, is.nodeID), addr)
 }
@@ -397,6 +402,7 @@ func (is *IndexingService) onGetPeersResponse(msg *Message, addr netip.AddrPort)
 	is.eventHandlers.OnResult(IndexingResult{
 		infoHash:  infoHash,
 		peerAddrs: peerAddrs,
+		family:    is.addressFamily(),
 	})
 }
 
@@ -488,6 +494,13 @@ func (is *IndexingService) acceptsAddress(addr netip.AddrPort) bool {
 	}
 	is4 := addr.Addr().Is4()
 	return (is.network == "udp4" && is4) || (is.network == "udp6" && !is4)
+}
+
+func (is *IndexingService) addressFamily() int {
+	if is.network == "udp6" {
+		return 6
+	}
+	return 4
 }
 
 func resolveBootstrapAddresses(network, node string) ([]netip.AddrPort, error) {

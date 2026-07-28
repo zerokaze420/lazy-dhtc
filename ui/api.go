@@ -37,6 +37,10 @@ func (c *Controller) APIStats(ctx *gin.Context) {
 		"stats":           stats,
 		"interval":        interval,
 		"info_hash_count": c.Database.GetInfoHashCount(),
+		"family_counts": func() gin.H {
+			ipv4, ipv6, unknown := c.Database.GetFamilyCounts()
+			return gin.H{"ipv4": ipv4, "ipv6": ipv6, "unknown": unknown}
+		}(),
 	})
 }
 

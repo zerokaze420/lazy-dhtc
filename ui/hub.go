@@ -71,6 +71,7 @@ type TrawlMessage struct {
 	DiscoveredOn int64
 	Files        []dhtcclient.File
 	Categories   []string
+	Family       int
 }
 
 func (h *Hub) BroadcastMetadata(md dhtcclient.Metadata) {
@@ -81,6 +82,7 @@ func (h *Hub) BroadcastMetadata(md dhtcclient.Metadata) {
 		DiscoveredOn: md.DiscoveredOn,
 		Files:        md.Files,
 		Categories:   db.Categorize(md),
+		Family:       md.Family,
 	}
 	h.Broadcast(msg)
 }

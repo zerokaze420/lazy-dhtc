@@ -47,6 +47,21 @@ func (r *CloverRepository) GetInfoHashCount() int {
 	return len(vals)
 }
 
+func (r *CloverRepository) GetFamilyCounts() (ipv4, ipv6, unknown int64) {
+	docs, _ := r.db.FindAll(query.NewQuery(TorrentTable))
+	for _, doc := range docs {
+		switch numericInt(doc.Get("Family")) {
+		case 4:
+			ipv4++
+		case 6:
+			ipv6++
+		default:
+			unknown++
+		}
+	}
+	return
+}
+
 func (r *CloverRepository) FindBy(key string, searchType string, searchInput string) []MetaData {
 	values, _ := r.db.FindAll(query.NewQuery(TorrentTable).MatchFunc(func(doc *document.Document) bool {
 		return Matches(doc, key, searchType, searchInput)
@@ -126,6 +141,7 @@ func (r *CloverRepository) InsertMetadata(md dhtcclient.Metadata) bool {
 	doc.Set("DiscoveredOn", md.DiscoveredOn)
 	doc.Set("TotalSize", md.TotalSize)
 	doc.Set("Categories", Categorize(md))
+	doc.Set("Family", md.Family)
 	_, err := r.db.InsertOne(TorrentTable, doc)
 	if err != nil {
 		return false
@@ -254,21 +270,29 @@ func (r *CloverRepository) GetStatsByInterval(interval string, limit int) ([]Sta
 		return nil, err
 	}
 
-	bucketMap := make(map[int64]int64)
+	bucketMap := make(map[int64]Stats)
 	seconds := int64(duration.Seconds())
 	for _, doc := range docs {
 		discoveredOn, _ := doc.Get("DiscoveredOn").(int64)
 		bucket := (discoveredOn / seconds) * seconds
-		bucketMap[bucket]++
+		stats := bucketMap[bucket]
+		stats.TorrentCount++
+		switch numericInt(doc.Get("Family")) {
+		case 4:
+			stats.IPv4Count++
+		case 6:
+			stats.IPv6Count++
+		default:
+			stats.UnknownCount++
+		}
+		bucketMap[bucket] = stats
 	}
 
 	res := make([]Stats, limit)
 	for i := range limit {
 		ts := now.Add(-time.Duration(i) * duration)
-		res[i] = Stats{
-			Timestamp:    ts,
-			TorrentCount: bucketMap[ts.Unix()],
-		}
+		res[i] = bucketMap[ts.Unix()]
+		res[i].Timestamp = ts
 	}
 	return res, nil
 }

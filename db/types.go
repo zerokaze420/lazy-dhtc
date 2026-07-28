@@ -5,6 +5,9 @@ import "time"
 type Stats struct {
 	Timestamp    time.Time `gorm:"primaryKey"`
 	TorrentCount int64
+	IPv4Count    int64
+	IPv6Count    int64
+	UnknownCount int64
 }
 
 type WatchEntry struct {
@@ -34,4 +37,5 @@ type MetaData struct {
 	TotalSize    uint64
 	Files        []any
 	Categories   []string
+	Family       int
 }

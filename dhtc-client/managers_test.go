@@ -61,3 +61,11 @@ func TestDualStackRoutingTablesAreIndependent(t *testing.T) {
 		t.Fatalf("routing table sizes = (%d, %d), want (1, 0)", ipv4.routingTableSize(), ipv6.routingTableSize())
 	}
 }
+
+func TestIndexingResultReportsOverlayFamily(t *testing.T) {
+	ipv4 := NewIndexingService("udp4", "127.0.0.1:0", "", time.Hour, 16, 0, IndexingServiceEventHandlers{})
+	ipv6 := NewIndexingService("udp6", "[::1]:0", "", time.Hour, 16, 0, IndexingServiceEventHandlers{})
+	if ipv4.addressFamily() != 4 || ipv6.addressFamily() != 6 {
+		t.Fatalf("overlay families = (%d, %d), want (4, 6)", ipv4.addressFamily(), ipv6.addressFamily())
+	}
+}

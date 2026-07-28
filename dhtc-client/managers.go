@@ -18,6 +18,7 @@ type Service interface {
 type Result interface {
 	InfoHash() []byte
 	PeerAddrs() []netip.AddrPort
+	Family() int
 }
 
 type Manager struct {

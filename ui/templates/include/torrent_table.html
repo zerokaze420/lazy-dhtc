@@ -24,6 +24,13 @@
                 class="collapse-title p-2 min-h-0 flex items-center pr-10 font-medium"
               >
                 {{ .Name }}
+                {{ if eq .Family 4 }}
+                <span class="badge badge-info badge-sm ml-2 shrink-0">V4</span>
+                {{ else if eq .Family 6 }}
+                <span class="badge badge-success badge-sm ml-2 shrink-0">V6</span>
+                {{ else }}
+                <span class="badge badge-ghost badge-sm ml-2 shrink-0">?</span>
+                {{ end }}
               </div>
               <div class="collapse-content p-2">
                 <div

@@ -34,6 +34,7 @@ func Document2MetaData(value *document.Document) MetaData {
 	discoveredOn, _ := value.Get("DiscoveredOn").(int64)
 	totalSize, _ := value.Get("TotalSize").(uint64)
 	files, _ := value.Get("Files").([]any)
+	family := numericInt(value.Get("Family"))
 
 	return MetaData{
 		Name:         name,
@@ -42,6 +43,22 @@ func Document2MetaData(value *document.Document) MetaData {
 		TotalSize:    totalSize,
 		Files:        files,
 		Categories:   categories,
+		Family:       family,
+	}
+}
+
+func numericInt(value any) int {
+	switch v := value.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case uint64:
+		return int(v)
+	case float64:
+		return int(v)
+	default:
+		return 0
 	}
 }
 
