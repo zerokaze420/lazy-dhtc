@@ -29,6 +29,7 @@
         <th>{{ t .lang "workers_dropped" }}</th>
         <th>{{ t .lang "workers_last_success" }}</th>
         <th>{{ t .lang "workers_last_error" }}</th>
+        <th>Actions</th>
       </tr></thead>
       <tbody id="workers-body"></tbody>
     </table>
@@ -68,7 +69,16 @@
         <td class="font-mono">${w.dropped || 0}</td>
         <td class="whitespace-nowrap">${workerTime(w.last_success)}</td>
         <td class="text-error max-w-xs break-all">${escapeWorker(w.last_error || "-")}</td>
+        <td>
+          <button class="btn btn-xs btn-outline btn-warning" onclick="controlWorker('${escapeWorker(w.url)}','pause')">⏸</button>
+          <button class="btn btn-xs btn-outline btn-success" onclick="controlWorker('${escapeWorker(w.url)}','resume')">▶</button>
+        </td>
       </tr>`).join("");
+  }
+  async function controlWorker(url, action) {
+    const endpoint = "/api/workers/" + (action === "pause" ? "pause" : "resume");
+    await fetch(endpoint, { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({url}) });
+    await refreshWorkers();
   }
   refreshWorkers();
   setInterval(refreshWorkers, 5000);

@@ -289,6 +289,38 @@ type WorkerStatus struct {
 	LastError   string    `json:"last_error"`
 }
 
+const ControlPath = "/api/worker/v1/control"
+
+func (p *MasterPuller) PauseWorker(ctx context.Context, workerURL string) error {
+	return p.sendControl(ctx, workerURL, "pause")
+}
+
+func (p *MasterPuller) ResumeWorker(ctx context.Context, workerURL string) error {
+	return p.sendControl(ctx, workerURL, "resume")
+}
+
+func (p *MasterPuller) sendControl(ctx context.Context, workerURL, action string) error {
+	p.mu.RLock()
+	token := p.token
+	p.mu.RUnlock()
+	body, _ := json.Marshal(map[string]string{"action": action})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, workerURL+ControlPath, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("worker control returned %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func NewMasterFlushHandler(token string, ingest func(dhtcclient.Metadata) bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")

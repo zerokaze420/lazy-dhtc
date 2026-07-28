@@ -140,6 +140,8 @@ func RunWebServer(configuration *config.Configuration, database db.Repository, h
 		api.GET("/categories", uiCtrl.APICategories)
 		api.GET("/latest", uiCtrl.APILatest)
 		api.GET("/workers", uiCtrl.APIWorkers)
+		api.POST("/workers/pause", uiCtrl.APIWorkerPause)
+		api.POST("/workers/resume", uiCtrl.APIWorkerResume)
 	}
 
 	css, _ := fs.Sub(static, "static/css")

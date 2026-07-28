@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/subtle"
 	"dhtc/cache"
 	"dhtc/cluster"
 	"dhtc/config"
@@ -10,6 +11,7 @@ import (
 	dhtcclient "dhtc/dhtc-client"
 	"dhtc/notifier"
 	"dhtc/ui"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -129,22 +131,33 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 	if strings.TrimSpace(cfg.ClusterToken) == "" {
 		log.Fatal().Msg("cluster token is required in worker mode")
 	}
-	cacheDir := cfg.WorkerCacheDir
-	if cacheDir == "" {
-		cacheDir = strings.ReplaceAll(cfg.Address, ":", "_")
-		cacheDir = strings.ReplaceAll(cacheDir, "/", "_")
-		cacheDir = "/tmp/dhtc-worker-" + cacheDir
-	}
-	queue := cluster.NewWorkerQueue(cfg.WorkerID, cfg.WorkerQueue, cacheDir, func(md dhtcclient.Metadata) {
+	onAck := func(md dhtcclient.Metadata) {
 		cache.InfoHashCacheExpireAfter(string(md.InfoHash), 12*time.Hour)
-	})
+	}
+	var queue *cluster.WorkerQueue
+	pushMode := cfg.MasterURL != ""
+	if pushMode {
+		cacheDir := cfg.WorkerCacheDir
+		if cacheDir == "" {
+			cacheDir = strings.ReplaceAll(cfg.Address, ":", "_")
+			cacheDir = strings.ReplaceAll(cacheDir, "/", "_")
+			cacheDir = "/tmp/dhtc-worker-" + cacheDir
+		}
+		queue = cluster.NewWorkerQueue(cfg.WorkerID, cfg.WorkerQueue, cacheDir, onAck)
+	} else {
+		queue = cluster.NewWorkerQueue(cfg.WorkerID, cfg.WorkerQueue, "", onAck)
+	}
+	enqueue := func(md dhtcclient.Metadata) bool {
+		log.Info().Str("name", md.Name).Hex("info_hash", md.InfoHash).Str("worker_id", cfg.WorkerID).Msg("Worker discovered metadata")
+		return queue.Enqueue(md)
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	crawler := ui.NewWorkerCrawlerManager(cfg, bootstrapNodes, queue.Enqueue)
+	crawler := ui.NewWorkerCrawlerManager(cfg, bootstrapNodes, enqueue)
 	if !cfg.CrawlerScheduleEnabled {
 		crawler.Start()
 	}
-	if cfg.MasterURL != "" {
+	if pushMode {
 		queue.SetMaster(cfg.MasterURL, cfg.ClusterToken)
 		queue.StartFlushLoop(ctx, 5*time.Minute, cfg.WorkerQueue)
 		log.Info().Str("master", cfg.MasterURL).Msg("Worker push mode enabled")
@@ -154,7 +167,40 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 	mux.Handle(cluster.QueuePath, queue.Handler(cfg.ClusterToken, cfg.WorkerBatch))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"ok","role":"worker","queued":%d,"dropped":%d}`, queue.Length(), queue.Dropped())
+		fmt.Fprintf(w, `{"status":"ok","role":"worker","queued":%d,"dropped":%d,"paused":%t}`, queue.Length(), queue.Dropped(), !crawler.Status().Running)
+	})
+	mux.HandleFunc("/api/worker/v1/control", func(w http.ResponseWriter, r *http.Request) {
+		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if cfg.ClusterToken == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(cfg.ClusterToken)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Action string `json:"action"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256)).Decode(&req); err != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		switch req.Action {
+		case "pause":
+			if crawler.Stop() {
+				log.Info().Str("worker_id", cfg.WorkerID).Msg("Worker paused")
+			}
+		case "resume":
+			if crawler.Start() {
+				log.Info().Str("worker_id", cfg.WorkerID).Msg("Worker resumed")
+			}
+		default:
+			http.Error(w, "unknown action", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok", "running": crawler.Status().Running})
 	})
 	server := &http.Server{Addr: cfg.Address, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -163,7 +209,7 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 			cancel()
 		}
 	}()
-	log.Info().Str("worker_id", cfg.WorkerID).Str("listen", cfg.Address).Int("queue", cfg.WorkerQueue).Int("batch", cfg.WorkerBatch).Msg("Worker started")
+	log.Info().Str("worker_id", cfg.WorkerID).Str("listen", cfg.Address).Int("queue", cfg.WorkerQueue).Int("batch", cfg.WorkerBatch).Bool("push_mode", pushMode).Msg("Worker started")
 	<-ctx.Done()
 	crawler.Stop()
 	queue.StopFlushLoop()
