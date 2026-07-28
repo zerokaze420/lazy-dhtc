@@ -23,36 +23,36 @@ OPEN_FIREWALL=true
 
 usage() {
   cat <<'EOF'
-Install dhtc Worker as a systemd service.
-Running the installer again upgrades or repairs the existing installation.
+dhtc Worker 一键安装脚本
+重复运行可覆盖升级或修复现有安装。
 
-Usage:
+用法：
   sudo ./install-worker.sh [options]
 
-Connection:
-  --address HOST:PORT        Public Worker HTTP listen address. Default: 0.0.0.0:4200
-  --worker-id ID             Worker name shown in Master GUI. Default: generated and persisted
-  --token TOKEN              Shared Master token. Default: generated and persisted
-  --network-mode MODE        DHT mode: dual or ipv4. Default: dual
+连接选项：
+  --address HOST:PORT        Worker HTTP 监听地址，默认：0.0.0.0:4200
+  --worker-id ID             Master 界面显示的 Worker 名称，默认：自动生成并保留
+  --token TOKEN              Master 与 Worker 共享密钥，默认：自动生成并保留
+  --network-mode MODE        DHT 网络模式：dual 或 ipv4，默认：dual
 
-Resource limits:
-  --performance PROFILE      auto, high, max or conservative. Default: auto
-  --queue N                  Maximum in-memory metadata queue. Default: selected automatically
-  --batch N                  Maximum records returned per Master pull. Default: 64
-  --max-downloads N          Concurrent metadata downloads. Default: selected automatically
-  --max-leeches N            Active metadata tasks. Default: selected automatically
-  --rate-limit N             UDP packets per second per DHT network. Default: selected automatically
+性能选项：
+  --performance PROFILE      性能档位：auto、high、max、conservative，默认：auto
+  --queue N                  内存待拉取队列上限，默认：自动选择
+  --batch N                  Master 单次拉取数量，默认：64
+  --max-downloads N          元数据下载并发数，默认：自动选择
+  --max-leeches N            活跃元数据任务数，默认：自动选择
+  --rate-limit N             每个 DHT 网络每秒 UDP 包上限，默认：自动选择
 
-Installation:
-  --version VERSION          Release tag such as v1.0.13, or latest. Default: latest
-  --install-dir PATH         Binary directory. Default: /usr/local/bin
-  --data-dir PATH            Routing-table cache directory. Default: /var/lib/dhtc-worker
-  --service-user USER        Unprivileged system account. Default: dhtc-worker
-  --service-name NAME        systemd unit name. Default: dhtc-worker
-  --no-open-firewall         Do not add a local firewall rule for the Worker TCP port
-  -h, --help                 Show this help.
+安装选项：
+  --version VERSION          发布版本，例如 v1.0.13 或 latest，默认：latest
+  --install-dir PATH         二进制安装目录，默认：/usr/local/bin
+  --data-dir PATH            路由表缓存目录，默认：/var/lib/dhtc-worker
+  --service-user USER        服务运行用户，默认：dhtc-worker
+  --service-name NAME        systemd 服务名称，默认：dhtc-worker
+  --no-open-firewall         不自动放行 Worker TCP 端口
+  -h, --help                 显示帮助
 
-Examples:
+示例：
   sudo ./install-worker.sh
 
   sudo ./install-worker.sh \
@@ -60,29 +60,29 @@ Examples:
     --address 0.0.0.0:4200 \
     --performance max
 
-After installation:
+安装后检查：
   systemctl status dhtc-worker
   journalctl -u dhtc-worker -f
   curl http://127.0.0.1:4200/health
 
-Reinstall or upgrade:
+覆盖安装或升级：
   sudo ./install-worker.sh
-  Existing Worker ID and cluster token are preserved unless explicitly replaced.
+  默认保留已有 Worker ID 和集群密钥，显式传参时才会替换。
 
-Master configuration:
+Master 配置示例：
   dhtc -node-role master \
     -worker-urls 'https://worker.example.com:4200' \
-    -cluster-token 'token printed by this installer'
+    -cluster-token '安装脚本输出的集群密钥'
 
-Security:
-  Expose the Worker port only to the Master's public egress IP when possible.
-  Put HTTPS in front of the Worker API when traffic crosses the public Internet.
+安全建议：
+  尽量只允许 Master 的公网出口 IP 访问 Worker 端口。
+  跨公网传输时建议为 Worker API 配置 HTTPS。
 EOF
 }
 
 need_value() {
   if [ "$#" -lt 2 ] || [ -z "$2" ]; then
-    echo "Missing value for $1" >&2
+    echo "错误：参数 $1 缺少值" >&2
     exit 2
   fi
 }
@@ -106,19 +106,19 @@ while [ "$#" -gt 0 ]; do
     --service-name) need_value "$@"; SERVICE_NAME="$2"; shift 2 ;;
     --no-open-firewall) OPEN_FIREWALL=false; shift ;;
     -h|--help) usage; exit 0 ;;
-    *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+    *) echo "错误：未知参数 $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
-case "$SERVICE_USER" in ''|*[!A-Za-z0-9_-]*) echo "--service-user contains invalid characters" >&2; exit 2 ;; esac
-case "$SERVICE_NAME" in ''|*[!A-Za-z0-9_.@-]*) echo "--service-name contains invalid characters" >&2; exit 2 ;; esac
-case "$INSTALL_DIR:$DATA_DIR" in *' '*|*'\t'*) echo "Installation paths cannot contain whitespace" >&2; exit 2 ;; esac
-case "$NETWORK_MODE" in dual|ipv4) ;; *) echo "--network-mode must be dual or ipv4" >&2; exit 2 ;; esac
-case "$PERFORMANCE" in auto|high|max|conservative) ;; *) echo "--performance must be auto, high, max or conservative" >&2; exit 2 ;; esac
-case "$ADDRESS" in *:*) ;; *) echo "--address must be HOST:PORT" >&2; exit 2 ;; esac
+case "$SERVICE_USER" in ''|*[!A-Za-z0-9_-]*) echo "错误：--service-user 包含无效字符" >&2; exit 2 ;; esac
+case "$SERVICE_NAME" in ''|*[!A-Za-z0-9_.@-]*) echo "错误：--service-name 包含无效字符" >&2; exit 2 ;; esac
+case "$INSTALL_DIR:$DATA_DIR" in *' '*|*'\t'*) echo "错误：安装路径不能包含空白字符" >&2; exit 2 ;; esac
+case "$NETWORK_MODE" in dual|ipv4) ;; *) echo "错误：--network-mode 只能是 dual 或 ipv4" >&2; exit 2 ;; esac
+case "$PERFORMANCE" in auto|high|max|conservative) ;; *) echo "错误：--performance 只能是 auto、high、max 或 conservative" >&2; exit 2 ;; esac
+case "$ADDRESS" in *:*) ;; *) echo "错误：--address 必须使用 HOST:PORT 格式" >&2; exit 2 ;; esac
 PORT="${ADDRESS##*:}"
-case "$PORT" in ''|*[!0-9]*) echo "--address port must be numeric" >&2; exit 2 ;; esac
-[ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || { echo "--address port must be between 1 and 65535" >&2; exit 2; }
+case "$PORT" in ''|*[!0-9]*) echo "错误：--address 的端口必须是数字" >&2; exit 2 ;; esac
+[ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || { echo "错误：端口必须在 1 到 65535 之间" >&2; exit 2; }
 
 CPU_COUNT="$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)"
 case "$CPU_COUNT" in ''|*[!0-9]*) CPU_COUNT=1 ;; esac
@@ -161,24 +161,24 @@ MAX_LEECHES="${MAX_LEECHES:-$DEFAULT_LEECHES}"
 RATE_LIMIT="${RATE_LIMIT:-$DEFAULT_RATE}"
 
 for value in "$QUEUE" "$BATCH" "$MAX_DOWNLOADS" "$MAX_LEECHES" "$RATE_LIMIT"; do
-  case "$value" in ''|*[!0-9]*) echo "Resource limits must be positive integers" >&2; exit 2 ;; esac
-  [ "$value" -gt 0 ] || { echo "Resource limits must be greater than zero" >&2; exit 2; }
+  case "$value" in ''|*[!0-9]*) echo "错误：性能参数必须是正整数" >&2; exit 2 ;; esac
+  [ "$value" -gt 0 ] || { echo "错误：性能参数必须大于零" >&2; exit 2; }
 done
-[ "$BATCH" -le 64 ] || { echo "--batch cannot exceed 64" >&2; exit 2; }
+[ "$BATCH" -le 64 ] || { echo "错误：--batch 不能超过 64" >&2; exit 2; }
 
 for command in awk curl id install mktemp mv od sha256sum systemctl tr uname useradd; do
-  command -v "$command" >/dev/null 2>&1 || { echo "Required command not found: $command" >&2; exit 1; }
+  command -v "$command" >/dev/null 2>&1 || { echo "错误：缺少必要命令 $command" >&2; exit 1; }
 done
 
 ARCH="$(uname -m)"
 case "$ARCH" in
   x86_64|amd64) ARCH="amd64" ;;
   aarch64|arm64) ARCH="arm64" ;;
-  *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
+  *) echo "错误：不支持的处理器架构 $ARCH" >&2; exit 1 ;;
 esac
 
 if [ "$(id -u)" -ne 0 ]; then
-  echo "Run this installer as root (for example with sudo)." >&2
+  echo "错误：请使用 root 权限运行，例如 sudo ./install-worker.sh" >&2
   exit 1
 fi
 
@@ -193,14 +193,14 @@ if [ -f "$ENV_FILE" ]; then
 fi
 if [ -z "$TOKEN" ]; then
   TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
-  echo "Generated a new cluster token."
+  echo "已生成新的集群密钥。"
 fi
 if [ -z "$WORKER_ID" ]; then
   WORKER_ID="worker-$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
-  echo "Generated Worker ID: $WORKER_ID"
+  echo "已生成 Worker ID：$WORKER_ID"
 fi
-case "$TOKEN" in *[!A-Za-z0-9._~+/=-]*) echo "--token contains unsupported characters" >&2; exit 2 ;; esac
-case "$WORKER_ID" in ''|*[!A-Za-z0-9._-]*) echo "--worker-id may contain only letters, numbers, dot, underscore and dash" >&2; exit 2 ;; esac
+case "$TOKEN" in *[!A-Za-z0-9._~+/=-]*) echo "错误：--token 包含不支持的字符" >&2; exit 2 ;; esac
+case "$WORKER_ID" in ''|*[!A-Za-z0-9._-]*) echo "错误：--worker-id 只能包含字母、数字、点、下划线和短横线" >&2; exit 2 ;; esac
 
 ASSET="dhtc-worker-linux-${ARCH}"
 if [ "$VERSION" = "latest" ]; then
@@ -211,13 +211,13 @@ fi
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 
-echo "Downloading ${ASSET} (${VERSION})..."
+echo "正在下载 ${ASSET}（${VERSION}）..."
 curl -fL --retry 3 -o "$TMP_DIR/$ASSET" "$BASE_URL/$ASSET"
 curl -fL --retry 3 -o "$TMP_DIR/SHA256SUMS-linux.txt" "$BASE_URL/SHA256SUMS-linux.txt"
 EXPECTED="$(awk -v asset="$ASSET" '$2 == asset { print $1 }' "$TMP_DIR/SHA256SUMS-linux.txt")"
 ACTUAL="$(sha256sum "$TMP_DIR/$ASSET" | awk '{ print $1 }')"
 if [ -z "$EXPECTED" ] || [ "$EXPECTED" != "$ACTUAL" ]; then
-  echo "SHA256 verification failed" >&2
+  echo "错误：SHA256 校验失败" >&2
   exit 1
 fi
 
@@ -266,20 +266,20 @@ systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 systemctl restart "$SERVICE_NAME"
 
-FIREWALL_STATUS="not managed"
+FIREWALL_STATUS="未管理"
 if [ "$OPEN_FIREWALL" = true ]; then
   if command -v ufw >/dev/null 2>&1; then
     ufw allow "${PORT}/tcp"
-    FIREWALL_STATUS="ufw allows ${PORT}/tcp"
+    FIREWALL_STATUS="ufw 已放行 ${PORT}/tcp"
   elif command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then
     firewall-cmd --permanent --add-port="${PORT}/tcp"
     firewall-cmd --reload
-    FIREWALL_STATUS="firewalld allows ${PORT}/tcp"
+    FIREWALL_STATUS="firewalld 已放行 ${PORT}/tcp"
   else
-    FIREWALL_STATUS="no active ufw/firewalld detected"
+    FIREWALL_STATUS="未检测到启用的 ufw/firewalld"
   fi
 else
-  FIREWALL_STATUS="skipped by --no-open-firewall"
+  FIREWALL_STATUS="已按 --no-open-firewall 跳过"
 fi
 
 PUBLIC_IPV4="$(curl -4 -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
@@ -301,21 +301,29 @@ if [ -z "$WORKER_URLS" ]; then
 fi
 
 echo
-echo "Installed successfully."
-echo "  Binary:  ${INSTALL_DIR}/dhtc-worker"
-echo "  Data:    ${DATA_DIR}"
-echo "  Service: ${SERVICE_NAME}.service"
-echo "  Listen:  ${ADDRESS}"
-echo "  Firewall: ${FIREWALL_STATUS}"
-echo "  Performance: ${SELECTED_PROFILE} (${CPU_COUNT} CPU, ${MEM_MB} MiB available memory)"
-echo "  Limits: queue=${QUEUE}, batch=${BATCH}, downloads=${MAX_DOWNLOADS}, leeches=${MAX_LEECHES}, rate=${RATE_LIMIT}"
+echo "┌─ dhtc Worker 安装完成"
+echo "│"
+echo "├─ 安装信息"
+printf '│  二进制       │ %s\n' "${INSTALL_DIR}/dhtc-worker"
+printf '│  数据目录     │ %s\n' "${DATA_DIR}"
+printf '│  systemd 服务 │ %s.service\n' "${SERVICE_NAME}"
+printf '│  监听地址     │ %s\n' "${ADDRESS}"
+printf '│  防火墙       │ %s\n' "${FIREWALL_STATUS}"
+echo "│"
+echo "├─ 性能配置"
+printf '│  性能档位     │ %s（%s 核 CPU，%s MiB 可用内存）\n' "$SELECTED_PROFILE" "$CPU_COUNT" "$MEM_MB"
+printf '│  队列 / 批量  │ %s / %s\n' "$QUEUE" "$BATCH"
+printf '│  下载 / 任务  │ %s / %s\n' "$MAX_DOWNLOADS" "$MAX_LEECHES"
+printf '│  UDP 速率     │ %s 包/秒/网络\n' "$RATE_LIMIT"
+echo "│"
+echo "├─ Master 连接信息"
+printf '│  Worker ID    │ %s\n' "$WORKER_ID"
+printf '│  Worker URL   │ %s\n' "$WORKER_URLS"
+printf '│  集群密钥     │ %s\n' "$TOKEN"
+echo "│"
+echo "└─ 安装成功，服务已启动"
 echo
-echo "Master connection settings:"
-echo "  Worker ID:     ${WORKER_ID}"
-echo "  Worker URLs:   ${WORKER_URLS}"
-echo "  Cluster Token: ${TOKEN}"
-echo
-echo "Add Worker URLs and Cluster Token to the Master's Worker settings."
-echo "Also allow TCP port ${PORT} in the VPS provider security group when one is enabled."
-echo "Check status: systemctl status ${SERVICE_NAME}"
-echo "Follow logs:  journalctl -u ${SERVICE_NAME} -f"
+echo "请将 Worker URL 和集群密钥填写到 Master 的 Worker 设置中。"
+echo "如 VPS 启用了云安全组，还需在云平台控制台放行 ${PORT}/tcp。"
+echo "查看状态：systemctl status ${SERVICE_NAME}"
+echo "实时日志：journalctl -u ${SERVICE_NAME} -f"
