@@ -68,6 +68,22 @@ func TestScheduleStateRejectsInvalidWindow(t *testing.T) {
 	}
 }
 
+func TestManualOverrideLastsUntilNextScheduleBoundary(t *testing.T) {
+	manager := &CrawlerManager{configuration: &config.Configuration{
+		CrawlerScheduleEnabled: true,
+		CrawlerScheduleStart:   "22:00",
+		CrawlerScheduleEnd:     "07:00",
+	}}
+	now := time.Date(2026, 7, 28, 18, 45, 0, 0, time.Local)
+	manager.setManualOverrideAtLocked(now, true)
+	if !manager.manualOverride || !manager.manualRun {
+		t.Fatal("manual start did not establish a running override")
+	}
+	if manager.manualUntil.Hour() != 22 || manager.manualUntil.Day() != 28 {
+		t.Fatalf("manual override until %v, want 22:00", manager.manualUntil)
+	}
+}
+
 func TestCrawlerEndpointsCreatesOneNetworkPerAddressFamily(t *testing.T) {
 	endpoints := crawlerEndpoints(&config.Configuration{NetworkMode: "dual", ListenIPv4: "0.0.0.0:6881", ListenIPv6: "[::]:6881"}, nil)
 	if len(endpoints) != 2 {

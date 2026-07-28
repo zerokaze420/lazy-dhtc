@@ -45,6 +45,11 @@
           <p class="text-xs text-base-content/50 mt-1">
             {{ t .lang "crawler_auto_stop_at" }} {{ .crawler.AutoStopAt.Format "2006-01-02 15:04:05" }}
           </p>
+          {{ if .crawler.ManualOverride }}
+          <p class="text-xs text-warning mt-1">
+            {{ t .lang "crawler_manual_override" }} {{ .crawler.ManualOverrideUntil.Format "2006-01-02 15:04" }}
+          </p>
+          {{ end }}
           {{ end }}
           {{ if .crawler.ScheduleEnabled }}
           <p class="text-xs text-base-content/50 mt-1">

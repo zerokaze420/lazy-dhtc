@@ -15,15 +15,17 @@ import (
 )
 
 type CrawlerStatus struct {
-	Running            bool
-	StartedAt          time.Time
-	AutoStopAt         time.Time
-	Threads            int
-	AutoStopAfter      time.Duration
-	ScheduleEnabled    bool
-	ScheduleStart      string
-	ScheduleEnd        string
-	NextScheduleChange time.Time
+	Running             bool
+	StartedAt           time.Time
+	AutoStopAt          time.Time
+	Threads             int
+	AutoStopAfter       time.Duration
+	ScheduleEnabled     bool
+	ScheduleStart       string
+	ScheduleEnd         string
+	NextScheduleChange  time.Time
+	ManualOverride      bool
+	ManualOverrideUntil time.Time
 }
 
 type CrawlerManager struct {
@@ -38,6 +40,9 @@ type CrawlerManager struct {
 	autoStopAt      time.Time
 	threads         int
 	running         bool
+	manualOverride  bool
+	manualRun       bool
+	manualUntil     time.Time
 }
 
 func NewCrawlerManager(configuration *config.Configuration, bootstrapNodes4 []string, database db.Repository, nManager *notifier.Manager, hub *Hub) *CrawlerManager {
@@ -55,6 +60,11 @@ func NewCrawlerManager(configuration *config.Configuration, bootstrapNodes4 []st
 func (m *CrawlerManager) Start() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.setManualOverrideLocked(true)
+	return m.startLocked("manual")
+}
+
+func (m *CrawlerManager) startLocked(reason string) bool {
 
 	if m.running || m.configuration.OnlyWebServer {
 		return false
@@ -78,6 +88,7 @@ func (m *CrawlerManager) Start() bool {
 		m.autoStopAt = m.startedAt.Add(time.Duration(m.configuration.CrawlerAutoStopMinutes) * time.Minute)
 		go m.stopAfter(stop, time.Until(m.autoStopAt))
 	}
+	log.Info().Str("reason", reason).Time("auto_stop_at", m.autoStopAt).Msg("Crawler started")
 
 	return true
 }
@@ -85,7 +96,8 @@ func (m *CrawlerManager) Start() bool {
 func (m *CrawlerManager) Stop() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.stopLocked()
+	m.setManualOverrideLocked(false)
+	return m.stopLocked("manual")
 }
 
 func (m *CrawlerManager) Status() CrawlerStatus {
@@ -95,28 +107,62 @@ func (m *CrawlerManager) Status() CrawlerStatus {
 	now := time.Now()
 	_, next := scheduleState(now, m.configuration.CrawlerScheduleStart, m.configuration.CrawlerScheduleEnd)
 	return CrawlerStatus{
-		Running:            m.running,
-		StartedAt:          m.startedAt,
-		AutoStopAt:         m.autoStopAt,
-		Threads:            m.threads,
-		AutoStopAfter:      time.Duration(m.configuration.CrawlerAutoStopMinutes) * time.Minute,
-		ScheduleEnabled:    m.configuration.CrawlerScheduleEnabled,
-		ScheduleStart:      m.configuration.CrawlerScheduleStart,
-		ScheduleEnd:        m.configuration.CrawlerScheduleEnd,
-		NextScheduleChange: next,
+		Running:             m.running,
+		StartedAt:           m.startedAt,
+		AutoStopAt:          m.autoStopAt,
+		Threads:             m.threads,
+		AutoStopAfter:       time.Duration(m.configuration.CrawlerAutoStopMinutes) * time.Minute,
+		ScheduleEnabled:     m.configuration.CrawlerScheduleEnabled,
+		ScheduleStart:       m.configuration.CrawlerScheduleStart,
+		ScheduleEnd:         m.configuration.CrawlerScheduleEnd,
+		NextScheduleChange:  next,
+		ManualOverride:      m.manualOverride,
+		ManualOverrideUntil: m.manualUntil,
 	}
 }
 
 func (m *CrawlerManager) ReconcileSchedule() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.configuration.OnlyWebServer || !m.configuration.CrawlerScheduleEnabled {
+		m.manualOverride = false
+		m.manualUntil = time.Time{}
 		return
 	}
-	shouldRun, _ := scheduleState(time.Now(), m.configuration.CrawlerScheduleStart, m.configuration.CrawlerScheduleEnd)
-	if shouldRun {
-		m.Start()
-	} else {
-		m.Stop()
+	now := time.Now()
+	if m.manualOverride && now.Before(m.manualUntil) {
+		if m.manualRun {
+			m.startLocked("manual override")
+		} else {
+			m.stopLocked("manual override")
+		}
+		return
 	}
+	m.manualOverride = false
+	m.manualUntil = time.Time{}
+	shouldRun, _ := scheduleState(now, m.configuration.CrawlerScheduleStart, m.configuration.CrawlerScheduleEnd)
+	if shouldRun {
+		m.startLocked("schedule window opened")
+	} else {
+		m.stopLocked("schedule window closed")
+	}
+}
+
+func (m *CrawlerManager) setManualOverrideLocked(run bool) {
+	m.setManualOverrideAtLocked(time.Now(), run)
+}
+
+func (m *CrawlerManager) setManualOverrideAtLocked(now time.Time, run bool) {
+	if !m.configuration.CrawlerScheduleEnabled {
+		return
+	}
+	_, next := scheduleState(now, m.configuration.CrawlerScheduleStart, m.configuration.CrawlerScheduleEnd)
+	if next.IsZero() {
+		return
+	}
+	m.manualOverride = true
+	m.manualRun = run
+	m.manualUntil = next
 }
 
 func (m *CrawlerManager) scheduleLoop() {
@@ -162,7 +208,12 @@ func parseClockMinutes(value string) (int, bool) {
 
 func (m *CrawlerManager) stopAfter(stop <-chan struct{}, delay time.Duration) {
 	if delay <= 0 {
-		m.Stop()
+		m.mu.Lock()
+		if m.stop == stop {
+			m.manualRun = false
+			m.stopLocked("auto-stop timer")
+		}
+		m.mu.Unlock()
 		return
 	}
 
@@ -173,7 +224,8 @@ func (m *CrawlerManager) stopAfter(stop <-chan struct{}, delay time.Duration) {
 	case <-timer.C:
 		m.mu.Lock()
 		if m.stop == stop {
-			m.stopLocked()
+			m.manualRun = false
+			m.stopLocked("auto-stop timer")
 		}
 		m.mu.Unlock()
 	case <-stop:
@@ -181,7 +233,7 @@ func (m *CrawlerManager) stopAfter(stop <-chan struct{}, delay time.Duration) {
 	}
 }
 
-func (m *CrawlerManager) stopLocked() bool {
+func (m *CrawlerManager) stopLocked(reason string) bool {
 	if !m.running {
 		return false
 	}
@@ -190,6 +242,7 @@ func (m *CrawlerManager) stopLocked() bool {
 	m.running = false
 	m.stop = nil
 	m.autoStopAt = time.Time{}
+	log.Info().Str("reason", reason).Msg("Crawler stopped")
 	return true
 }
 
