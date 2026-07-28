@@ -37,6 +37,9 @@ type IndexingService struct {
 	counter          uint16
 	getPeersRequests map[[2]byte][]byte // GetPeersQuery.`t` -> infohash
 	requestsMu       sync.Mutex
+
+	probeCache   map[netip.Addr]time.Time
+	probeCacheMu sync.Mutex
 }
 
 type IndexingServiceEventHandlers struct {
@@ -96,6 +99,7 @@ func NewIndexingService(network string, laddr string, cachePath string, interval
 	service.done = make(chan struct{})
 
 	service.getPeersRequests = make(map[[2]byte][]byte)
+	service.probeCache = make(map[netip.Addr]time.Time)
 
 	return service
 }
@@ -212,6 +216,7 @@ func (is *IndexingService) runMaintenance(nodes []string) {
 		is.findNeighbors()
 		is.routingTable.Prune(time.Now().Add(-5 * time.Minute))
 	}
+	is.pruneProbeCache()
 }
 
 type routingCacheEntry struct {
@@ -453,6 +458,15 @@ func (is *IndexingService) probeBootstrapCandidate(addr netip.AddrPort) {
 	if !is.acceptsAddress(addr) || is.stopped() {
 		return
 	}
+
+	is.probeCacheMu.Lock()
+	if last, ok := is.probeCache[addr.Addr()]; ok && time.Since(last) < 10*time.Minute {
+		is.probeCacheMu.Unlock()
+		return
+	}
+	is.probeCache[addr.Addr()] = time.Now()
+	is.probeCacheMu.Unlock()
+
 	target := make([]byte, 20)
 	if _, err := rand.Read(target); err != nil {
 		return
@@ -505,6 +519,17 @@ func (is *IndexingService) addressFamily() int {
 		return 6
 	}
 	return 4
+}
+
+func (is *IndexingService) pruneProbeCache() {
+	is.probeCacheMu.Lock()
+	defer is.probeCacheMu.Unlock()
+	cutoff := time.Now().Add(-10 * time.Minute)
+	for addr, last := range is.probeCache {
+		if last.Before(cutoff) {
+			delete(is.probeCache, addr)
+		}
+	}
 }
 
 func resolveBootstrapAddresses(network, node string) ([]netip.AddrPort, error) {

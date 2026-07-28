@@ -98,6 +98,19 @@ func (t *RoutingTable) Closest(target []byte, limit int) []routingNode {
 	return nodes
 }
 
+func (t *RoutingTable) ContainsAddr(addr netip.AddrPort) bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	for _, bucket := range t.buckets {
+		for _, node := range bucket {
+			if node.Addr == addr {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (t *RoutingTable) Prune(before time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()

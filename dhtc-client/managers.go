@@ -64,7 +64,9 @@ func NewManager(endpoints []ListenEndpoint, interval time.Duration, maxNeighbors
 			}
 			candidate.want = []string{"n4", "n6"}
 			candidate.eventHandlers.OnBootstrapCandidate = func(addr netip.AddrPort) {
-				log.Debug().Stringer("address", addr).Msg("Discovered IPv6 DHT bootstrap candidate through BEP 32")
+				if ipv6Service.routingTable.ContainsAddr(addr) {
+					return
+				}
 				ipv6Service.probeBootstrapCandidate(addr)
 			}
 		}
