@@ -46,6 +46,14 @@
             {{ t .lang "crawler_auto_stop_at" }} {{ .crawler.AutoStopAt.Format "2006-01-02 15:04:05" }}
           </p>
           {{ end }}
+          {{ if .crawler.ScheduleEnabled }}
+          <p class="text-xs text-base-content/50 mt-1">
+            {{ t .lang "crawler_schedule" }} {{ .crawler.ScheduleStart }} - {{ .crawler.ScheduleEnd }}
+            {{ if .crawler.NextScheduleChange.IsZero }}{{ else }}
+            · {{ t .lang "next_schedule_change" }} {{ .crawler.NextScheduleChange.Format "2006-01-02 15:04" }}
+            {{ end }}
+          </p>
+          {{ end }}
         </div>
         <div class="flex gap-2">
           {{ if .crawler.Running }}

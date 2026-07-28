@@ -47,6 +47,7 @@
 - 在 Web 界面开始或停止爬虫。
 - 可选择仅 IPv4 或 IPv4 + IPv6 双栈采集。
 - Dashboard 分别统计 IPv4、IPv6 DHT 成功抓取并入库的种子；种子列表和实时抓取页会显示 `V4`/`V6` 来源标记。
+- 支持每日定时运行爬虫，可配置开始和停止时间，并支持 `22:00-07:00` 这类跨午夜时段。
 - 配置爬虫线程数、请求速率、并发元数据下载数和自动停止时间。
 - 限制数据库中保存的种子数量，自动清理最旧记录。
 - 设置订阅条件，在匹配种子出现时发送通知。
@@ -191,6 +192,11 @@ bootstrap:
 routing_cache:
   ipv4: "routing-table-v4.json"
   ipv6: "routing-table-v6.json"
+crawler:
+  schedule:
+    enabled: true
+    start: "22:00"
+    end: "07:00"
 ```
 
 使用 `go run ./cmd/dhtc -config dhtc.yml` 启动。显式命令行参数会覆盖 YAML 中对应的网络模式、监听地址和缓存路径。

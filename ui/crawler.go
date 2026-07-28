@@ -15,11 +15,15 @@ import (
 )
 
 type CrawlerStatus struct {
-	Running       bool
-	StartedAt     time.Time
-	AutoStopAt    time.Time
-	Threads       int
-	AutoStopAfter time.Duration
+	Running            bool
+	StartedAt          time.Time
+	AutoStopAt         time.Time
+	Threads            int
+	AutoStopAfter      time.Duration
+	ScheduleEnabled    bool
+	ScheduleStart      string
+	ScheduleEnd        string
+	NextScheduleChange time.Time
 }
 
 type CrawlerManager struct {
@@ -38,7 +42,7 @@ type CrawlerManager struct {
 }
 
 func NewCrawlerManager(configuration *config.Configuration, bootstrapNodes4, bootstrapNodes6 []string, database db.Repository, nManager *notifier.Manager, hub *Hub) *CrawlerManager {
-	return &CrawlerManager{
+	manager := &CrawlerManager{
 		configuration:   configuration,
 		database:        database,
 		notifier:        nManager,
@@ -46,6 +50,8 @@ func NewCrawlerManager(configuration *config.Configuration, bootstrapNodes4, boo
 		bootstrapNodes4: bootstrapNodes4,
 		bootstrapNodes6: bootstrapNodes6,
 	}
+	go manager.scheduleLoop()
+	return manager
 }
 
 func (m *CrawlerManager) Start() bool {
@@ -88,13 +94,72 @@ func (m *CrawlerManager) Status() CrawlerStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	now := time.Now()
+	_, next := scheduleState(now, m.configuration.CrawlerScheduleStart, m.configuration.CrawlerScheduleEnd)
 	return CrawlerStatus{
-		Running:       m.running,
-		StartedAt:     m.startedAt,
-		AutoStopAt:    m.autoStopAt,
-		Threads:       m.threads,
-		AutoStopAfter: time.Duration(m.configuration.CrawlerAutoStopMinutes) * time.Minute,
+		Running:            m.running,
+		StartedAt:          m.startedAt,
+		AutoStopAt:         m.autoStopAt,
+		Threads:            m.threads,
+		AutoStopAfter:      time.Duration(m.configuration.CrawlerAutoStopMinutes) * time.Minute,
+		ScheduleEnabled:    m.configuration.CrawlerScheduleEnabled,
+		ScheduleStart:      m.configuration.CrawlerScheduleStart,
+		ScheduleEnd:        m.configuration.CrawlerScheduleEnd,
+		NextScheduleChange: next,
 	}
+}
+
+func (m *CrawlerManager) ReconcileSchedule() {
+	if m.configuration.OnlyWebServer || !m.configuration.CrawlerScheduleEnabled {
+		return
+	}
+	shouldRun, _ := scheduleState(time.Now(), m.configuration.CrawlerScheduleStart, m.configuration.CrawlerScheduleEnd)
+	if shouldRun {
+		m.Start()
+	} else {
+		m.Stop()
+	}
+}
+
+func (m *CrawlerManager) scheduleLoop() {
+	m.ReconcileSchedule()
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		m.ReconcileSchedule()
+	}
+}
+
+func scheduleState(now time.Time, startText, endText string) (bool, time.Time) {
+	startMinute, startOK := parseClockMinutes(startText)
+	endMinute, endOK := parseClockMinutes(endText)
+	if !startOK || !endOK || startMinute == endMinute {
+		return false, time.Time{}
+	}
+	minute := now.Hour()*60 + now.Minute()
+	inside := false
+	if startMinute < endMinute {
+		inside = minute >= startMinute && minute < endMinute
+	} else {
+		inside = minute >= startMinute || minute < endMinute
+	}
+	nextMinute := startMinute
+	if inside {
+		nextMinute = endMinute
+	}
+	next := time.Date(now.Year(), now.Month(), now.Day(), nextMinute/60, nextMinute%60, 0, 0, now.Location())
+	if !next.After(now) {
+		next = next.AddDate(0, 0, 1)
+	}
+	return inside, next
+}
+
+func parseClockMinutes(value string) (int, bool) {
+	parsed, err := time.Parse("15:04", strings.TrimSpace(value))
+	if err != nil {
+		return 0, false
+	}
+	return parsed.Hour()*60 + parsed.Minute(), true
 }
 
 func (m *CrawlerManager) stopAfter(stop <-chan struct{}, delay time.Duration) {

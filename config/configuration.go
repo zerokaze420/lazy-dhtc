@@ -40,6 +40,9 @@ type Configuration struct {
 	RateLimit              int    `form:"RateLimit"`
 	CrawlerAutoStopMinutes int    `form:"CrawlerAutoStopMinutes"`
 	CrawlerStartOnLaunch   bool   `form:"CrawlerStartOnLaunch"`
+	CrawlerScheduleEnabled bool   `form:"CrawlerScheduleEnabled"`
+	CrawlerScheduleStart   string `form:"CrawlerScheduleStart"`
+	CrawlerScheduleEnd     string `form:"CrawlerScheduleEnd"`
 	MaxSavedTorrents       int    `form:"MaxSavedTorrents"`
 	NetworkMode            string `form:"NetworkMode"`
 	IPv6BootstrapNodeFile  string `form:"IPv6BootstrapNodeFile"`
@@ -104,6 +107,13 @@ func ParseArguments() *Configuration {
 					IPv4 string `yaml:"ipv4"`
 					IPv6 string `yaml:"ipv6"`
 				} `yaml:"routing_cache"`
+				Crawler struct {
+					Schedule struct {
+						Enabled bool   `yaml:"enabled"`
+						Start   string `yaml:"start"`
+						End     string `yaml:"end"`
+					} `yaml:"schedule"`
+				} `yaml:"crawler"`
 			}
 			if yaml.Unmarshal(data, &fileConfig) == nil {
 				config.NetworkMode = fileConfig.Network.Mode
@@ -113,6 +123,9 @@ func ParseArguments() *Configuration {
 				config.BootstrapIPv6 = fileConfig.Bootstrap.IPv6
 				config.RoutingTableCacheIPv4 = fileConfig.RoutingCache.IPv4
 				config.RoutingTableCacheIPv6 = fileConfig.RoutingCache.IPv6
+				config.CrawlerScheduleEnabled = fileConfig.Crawler.Schedule.Enabled
+				config.CrawlerScheduleStart = fileConfig.Crawler.Schedule.Start
+				config.CrawlerScheduleEnd = fileConfig.Crawler.Schedule.End
 			}
 		}
 	}
@@ -147,6 +160,9 @@ func ParseArguments() *Configuration {
 	flag.IntVar(&config.RateLimit, "RateLimit", 100, "max. outgoing UDP packets per second per crawler")
 	flag.IntVar(&config.CrawlerAutoStopMinutes, "CrawlerAutoStopMinutes", 0, "automatically stop crawler after N minutes (0 disables auto-stop)")
 	flag.BoolVar(&config.CrawlerStartOnLaunch, "CrawlerStartOnLaunch", false, "start crawler automatically when the app launches")
+	flag.BoolVar(&config.CrawlerScheduleEnabled, "CrawlerScheduleEnabled", false, "run crawler only during the configured daily time window")
+	flag.StringVar(&config.CrawlerScheduleStart, "CrawlerScheduleStart", defaultString(config.CrawlerScheduleStart, "22:00"), "daily crawler schedule start time (HH:MM)")
+	flag.StringVar(&config.CrawlerScheduleEnd, "CrawlerScheduleEnd", defaultString(config.CrawlerScheduleEnd, "07:00"), "daily crawler schedule end time (HH:MM)")
 	flag.IntVar(&config.MaxSavedTorrents, "MaxSavedTorrents", 20000, "maximum saved torrents before pruning oldest entries (0 disables pruning)")
 	flag.StringVar(&config.ConfigFile, "config", configFile, "optional YAML configuration file")
 	flag.StringVar(&config.NetworkMode, "NetworkMode", defaultString(config.NetworkMode, "dual"), "DHT network mode (ipv4, dual)")

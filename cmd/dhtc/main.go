@@ -96,18 +96,15 @@ func main() {
 	go hub.Run()
 
 	var nManager *notifier.Manager
-	crawler := ui.NewCrawlerManager(cfg, bootstrapNodes, bootstrapNodes6, database, nManager, hub)
 	if !cfg.OnlyWebServer {
 		nManager = notifier.SetupNotifiers(cfg)
-		crawler = ui.NewCrawlerManager(cfg, bootstrapNodes, bootstrapNodes6, database, nManager, hub)
-
 		if cfg.Statistics {
 			go collectStats(database)
 		}
-
-		if cfg.CrawlerStartOnLaunch {
-			crawler.Start()
-		}
+	}
+	crawler := ui.NewCrawlerManager(cfg, bootstrapNodes, bootstrapNodes6, database, nManager, hub)
+	if !cfg.OnlyWebServer && cfg.CrawlerStartOnLaunch && !cfg.CrawlerScheduleEnabled {
+		crawler.Start()
 	}
 
 	ui.RunWebServer(cfg, database, hub, nManager, crawler)

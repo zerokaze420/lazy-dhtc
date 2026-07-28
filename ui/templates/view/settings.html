@@ -379,6 +379,46 @@
                 <span class="label-text font-semibold">{{ t .lang "crawler_start_on_launch" }}</span>
               </label>
             </div>
+            <div class="form-control sm:col-span-2">
+              <label class="label cursor-pointer justify-start gap-4">
+                <input
+                  type="checkbox"
+                  name="CrawlerScheduleEnabled"
+                  value="true"
+                  class="checkbox checkbox-primary"
+                  {{ if .config.CrawlerScheduleEnabled }}checked{{ end }}
+                />
+                <input type="hidden" name="CrawlerScheduleEnabled" value="false" />
+                <span class="label-text font-semibold">{{ t .lang "crawler_schedule_enabled" }}</span>
+              </label>
+            </div>
+            <div class="form-control w-full">
+              <label class="label" for="CrawlerScheduleStart">
+                <span class="label-text font-semibold">{{ t .lang "crawler_schedule_start" }}</span>
+              </label>
+              <input
+                id="CrawlerScheduleStart"
+                type="time"
+                name="CrawlerScheduleStart"
+                value="{{ .config.CrawlerScheduleStart }}"
+                class="input input-bordered w-full"
+              />
+            </div>
+            <div class="form-control w-full">
+              <label class="label" for="CrawlerScheduleEnd">
+                <span class="label-text font-semibold">{{ t .lang "crawler_schedule_end" }}</span>
+              </label>
+              <input
+                id="CrawlerScheduleEnd"
+                type="time"
+                name="CrawlerScheduleEnd"
+                value="{{ .config.CrawlerScheduleEnd }}"
+                class="input input-bordered w-full"
+              />
+              <label class="label">
+                <span class="label-text-alt text-base-content/50">{{ t .lang "crawler_schedule_hint" }}</span>
+              </label>
+            </div>
             <div class="form-control w-full">
               <label class="label" for="RateLimit">
                 <span class="label-text font-semibold">{{ t .lang "rate_limit" }}</span>

@@ -3,6 +3,7 @@ package ui
 import (
 	"dhtc/config"
 	"testing"
+	"time"
 )
 
 func TestCrawlerEndpoints(t *testing.T) {
@@ -28,6 +29,42 @@ func TestCrawlerEndpoints(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestScheduleStateDaytimeWindow(t *testing.T) {
+	location := time.FixedZone("test", 8*60*60)
+	inside, next := scheduleState(time.Date(2026, 7, 28, 14, 30, 0, 0, location), "09:00", "18:00")
+	if !inside || next.Hour() != 18 || next.Day() != 28 {
+		t.Fatalf("inside=%v next=%v, want running until 18:00", inside, next)
+	}
+	inside, next = scheduleState(time.Date(2026, 7, 28, 20, 0, 0, 0, location), "09:00", "18:00")
+	if inside || next.Hour() != 9 || next.Day() != 29 {
+		t.Fatalf("inside=%v next=%v, want stopped until next day 09:00", inside, next)
+	}
+}
+
+func TestScheduleStateCrossesMidnight(t *testing.T) {
+	location := time.FixedZone("test", 8*60*60)
+	tests := []struct {
+		hour   int
+		inside bool
+	}{
+		{hour: 23, inside: true},
+		{hour: 6, inside: true},
+		{hour: 12, inside: false},
+	}
+	for _, test := range tests {
+		inside, _ := scheduleState(time.Date(2026, 7, 28, test.hour, 0, 0, 0, location), "22:00", "07:00")
+		if inside != test.inside {
+			t.Fatalf("hour %d inside=%v, want %v", test.hour, inside, test.inside)
+		}
+	}
+}
+
+func TestScheduleStateRejectsInvalidWindow(t *testing.T) {
+	if inside, next := scheduleState(time.Now(), "22:00", "22:00"); inside || !next.IsZero() {
+		t.Fatalf("equal schedule returned inside=%v next=%v", inside, next)
 	}
 }
 
