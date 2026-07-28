@@ -209,6 +209,16 @@ crawler:
 
 该模式适用于 Worker 有公网地址、Master 没有公网入口的网络拓扑。所有集群连接均由 Master 向公网 Worker 发起，Worker 不需要访问 Master。
 
+Worker 安装脚本默认使用 `--performance auto`，根据 VPS 的在线 CPU 数量和可用内存选择 `conservative`、`high` 或 `max` 档位。自动档位会使用 64 条传输批次，并提高下载并发、活动任务数、UDP 速率和待拉取队列；任意单项参数仍可通过 `--queue`、`--batch`、`--max-downloads`、`--max-leeches`、`--rate-limit` 覆盖。
+
+安装时脚本会自动通过 `ufw` 或运行中的 `firewalld` 放行 Worker 监听端口（默认 `4200/tcp`）。使用云厂商安全组的 VPS 仍需在控制台放行该端口；若端口由其他方式管理，可传入 `--no-open-firewall` 跳过本机防火墙配置。
+
+```shell
+sudo ./scripts/install-worker.sh --performance auto
+```
+
+资源充足且希望强制最高档时使用 `--performance max`；小型 VPS 可使用 `--performance conservative`。
+
 Master 示例：
 
 ```shell
