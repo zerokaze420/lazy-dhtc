@@ -174,6 +174,7 @@ func (is *IndexingService) Terminate() {
 func (is *IndexingService) index(nodes []string) {
 	ticker := time.NewTicker(is.interval)
 	defer ticker.Stop()
+	is.runMaintenance(nodes)
 
 	for {
 		select {
@@ -184,16 +185,22 @@ func (is *IndexingService) index(nodes []string) {
 		case <-ticker.C:
 		}
 
-		routingTableLen := is.routingTable.Len()
+		is.runMaintenance(nodes)
+	}
+}
 
-		if routingTableLen < 8 {
+func (is *IndexingService) runMaintenance(nodes []string) {
+	routingTableLen := is.routingTable.Len()
+	if routingTableLen < 8 {
+		if len(nodes) == 0 {
+			log.Warn().Str("network", is.network).Int("routing_table", routingTableLen).Msg("DHT cannot bootstrap: no bootstrap nodes configured")
+		} else {
 			is.bootstrap(nodes)
 		}
-		if routingTableLen > 0 {
-			is.findNeighbors()
-
-			is.routingTable.Prune(time.Now().Add(-5 * time.Minute))
-		}
+	}
+	if routingTableLen > 0 {
+		is.findNeighbors()
+		is.routingTable.Prune(time.Now().Add(-5 * time.Minute))
 	}
 }
 
@@ -255,6 +262,8 @@ func (is *IndexingService) routingTableSize() int {
 }
 
 func (is *IndexingService) bootstrap(nodes []string) {
+	resolved := 0
+	sent := 0
 	for _, node := range nodes {
 		if is.stopped() {
 			return
@@ -273,9 +282,12 @@ func (is *IndexingService) bootstrap(nodes []string) {
 		}
 
 		for _, addr := range addrs {
+			resolved++
 			is.protocol.SendMessage(NewFindNodeQuery(is.nodeID, target, is.want), addr)
+			sent++
 		}
 	}
+	log.Info().Str("network", is.network).Int("configured", len(nodes)).Int("resolved", resolved).Int("sent", sent).Int("routing_table", is.routingTable.Len()).Msg("DHT bootstrap round")
 }
 
 func (is *IndexingService) findNeighbors() {

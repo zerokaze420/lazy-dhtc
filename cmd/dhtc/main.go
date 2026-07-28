@@ -79,11 +79,17 @@ func main() {
 	bootstrapNodes6 = append(bootstrapNodes6, ReadFileLines(cfg.IPv6BootstrapNodeFile)...)
 	bootstrapNodes = append(bootstrapNodes, cfg.BootstrapIPv4...)
 	bootstrapNodes6 = append(bootstrapNodes6, cfg.BootstrapIPv6...)
+	bootstrapNodes6 = append(bootstrapNodes6, strings.FieldsFunc(cfg.BootstrapNodesIPv6, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	})...)
 
 	if len(bootstrapNodes) == 0 {
 		log.Warn().Msg("No bootstrap nodes found in '" + cfg.BootstrapNodeFile + "'.")
 		log.Info().Msg("Using default bootstrap nodes.")
 		bootstrapNodes = defaultBootstrapNodes
+	}
+	if len(bootstrapNodes6) == 0 && cfg.NetworkMode != config.NetworkModeIPv4 {
+		log.Warn().Msg("IPv6 DHT has no bootstrap nodes and no routing cache may be available; add IPv6 Bootstrap nodes in Settings")
 	}
 
 	hub := ui.NewHub()

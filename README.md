@@ -149,6 +149,7 @@ go run ./cmd/dhtc
 | `-ListenIPv4` | `0.0.0.0:0` | IPv4 DHT UDP 监听地址 |
 | `-ListenIPv6` | `[::]:0` | IPv6 DHT UDP 监听地址 |
 | `-BootstrapNodeFileIPv6` | `bootstrap-nodes6.txt` | IPv6 DHT Bootstrap 节点文件 |
+| `-BootstrapNodesIPv6` | 空 | 逗号、空格或换行分隔的 IPv6 Bootstrap 节点 |
 | `-RoutingTableCacheIPv4` | `routing-table-v4.json` | IPv4 路由表缓存 |
 | `-RoutingTableCacheIPv6` | `routing-table-v6.json` | IPv6 路由表缓存 |
 | `-config` | 空 | 可选的双栈 YAML 配置文件 |
@@ -170,6 +171,8 @@ go run ./cmd/dhtc -help
 IPv6 模式要求宿主机或容器具有可用的 IPv6 网络。按照 BEP 5 与 BEP 32，IPv4 DHT 和 IPv6 DHT 是完全独立的 Overlay：各自拥有 UDP Socket、节点 ID、KBucket 路由表、查询、Token、Bootstrap、刷新任务与持久化缓存。双栈模式不会把 IPv4 DHT 返回的节点注入 IPv6 路由表。
 
 常用 Mainline DHT Bootstrap 域名通常没有 AAAA 记录，因此首次运行 IPv6-only 模式时，应在 `bootstrap-nodes6.txt` 或 YAML 的 `bootstrap.ipv6` 中提供可用的 IPv6 Mainline DHT 节点。支持 AAAA 域名和 `[IPv6]:端口` 格式。Bootstrap 失败不会阻止程序运行；程序会先恢复 IPv6 路由表缓存，仅在缓存节点不足时继续尝试 Bootstrap。
+
+LPK 部署可以直接在设置页面的“IPv6 Bootstrap 节点”输入框中填写节点，每行一个。首次启动时若路由缓存和 Bootstrap 列表都为空，IPv6 DHT 无法自行发现第一个节点，日志会明确输出 `DHT cannot bootstrap: no bootstrap nodes configured`。
 
 可选 YAML 配置示例：
 

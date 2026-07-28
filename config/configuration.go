@@ -50,6 +50,7 @@ type Configuration struct {
 	RoutingTableCacheIPv6  string `form:"RoutingTableCacheIPv6"`
 	BootstrapIPv4          []string
 	BootstrapIPv6          []string
+	BootstrapNodesIPv6     string `form:"BootstrapNodesIPv6"`
 	ConfigFile             string
 
 	EnableBlacklist    bool   `form:"EnableBlacklist"`
@@ -165,6 +166,7 @@ func ParseArguments() *Configuration {
 
 	flag.StringVar(&config.BootstrapNodeFile, "BootstrapNodeFile", "bootstrap-nodes.txt", "bootstrap nodes to use")
 	flag.StringVar(&config.BootstrapNodeFileIPv6, "BootstrapNodeFileIPv6", "bootstrap-nodes6.txt", "IPv6 bootstrap nodes to use")
+	flag.StringVar(&config.BootstrapNodesIPv6, "BootstrapNodesIPv6", "", "IPv6 bootstrap nodes separated by commas or whitespace")
 
 	flag.BoolVar(&config.OnlyWebServer, "OnlyWebServer", false, "only start the web-server")
 	flag.StringVar(&config.AuthUser, "auth-user", "", "username for basic auth")

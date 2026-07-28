@@ -7,6 +7,7 @@ import (
 	dhtcclient "dhtc/dhtc-client"
 	"dhtc/notifier"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -165,6 +166,10 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
 }
 
 func crawlerEndpoints(configuration *config.Configuration, bootstrap4, bootstrap6 []string) []dhtcclient.ListenEndpoint {
+	bootstrap6 = append(append([]string(nil), bootstrap6...), strings.FieldsFunc(configuration.BootstrapNodesIPv6, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	})...)
+	bootstrap6 = uniqueStrings(bootstrap6)
 	endpoints := make([]dhtcclient.ListenEndpoint, 0, 2)
 	switch config.NormalizeNetworkMode(configuration.NetworkMode) {
 	case config.NetworkModeIPv6:
@@ -178,4 +183,21 @@ func crawlerEndpoints(configuration *config.Configuration, bootstrap4, bootstrap
 		endpoints = append(endpoints, dhtcclient.ListenEndpoint{Network: "udp4", Address: configuration.ListenIPv4, CachePath: configuration.RoutingTableCacheIPv4, Bootstrap: bootstrap4})
 	}
 	return endpoints
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }

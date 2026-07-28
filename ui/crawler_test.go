@@ -43,3 +43,15 @@ func TestCrawlerEndpointsCreatesOneNetworkPerAddressFamily(t *testing.T) {
 		}
 	}
 }
+
+func TestCrawlerEndpointsIncludeConfiguredIPv6BootstrapNodes(t *testing.T) {
+	configuration := &config.Configuration{
+		NetworkMode:        "ipv6",
+		ListenIPv6:         "[::]:6881",
+		BootstrapNodesIPv6: "[2001:db8::1]:6881\nseed.example:6881, [2001:db8::1]:6881",
+	}
+	endpoints := crawlerEndpoints(configuration, nil, nil)
+	if len(endpoints) != 1 || len(endpoints[0].Bootstrap) != 2 {
+		t.Fatalf("IPv6 bootstrap nodes = %#v, want two unique nodes", endpoints)
+	}
+}
