@@ -81,8 +81,18 @@ func TestWorkerQueueRequiresToken(t *testing.T) {
 	}
 }
 
-func TestMasterPullerRequiresToken(t *testing.T) {
-	if _, err := NewMasterPuller([]string{"http://worker"}, "", func(dhtcclient.Metadata) bool { return true }); err == nil {
-		t.Fatal("expected missing cluster token error")
+func TestMasterPullerCanBeConfiguredDynamically(t *testing.T) {
+	puller, err := NewMasterPuller(nil, "", func(dhtcclient.Metadata) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	puller.Configure([]string{"http://worker-1", "http://worker-2"}, "secret")
+	if len(puller.Status()) != 2 {
+		t.Fatalf("worker status count = %d, want 2", len(puller.Status()))
+	}
+	puller.Configure([]string{"http://worker-2"}, "new-secret")
+	status := puller.Status()
+	if len(status) != 1 || status[0].URL != "http://worker-2" {
+		t.Fatalf("worker status after reconfigure = %#v", status)
 	}
 }

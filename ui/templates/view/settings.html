@@ -133,6 +133,7 @@
       <input type="hidden" name="ListenIPv6" value="{{ .config.ListenIPv6 }}" />
       <input type="hidden" name="RoutingTableCacheIPv4" value="{{ .config.RoutingTableCacheIPv4 }}" />
       <input type="hidden" name="RoutingTableCacheIPv6" value="{{ .config.RoutingTableCacheIPv6 }}" />
+      <input type="hidden" name="WorkerID" value="{{ .config.WorkerID }}" />
       <!-- General Settings -->
       <div class="card bg-base-100 shadow-xl border border-base-300">
         <div class="card-body">
@@ -503,6 +504,23 @@
           </div>
         </div>
       </div>
+
+      {{ if eq .config.NodeRole "master" }}
+      <div class="card bg-base-100 shadow-xl border border-base-300">
+        <div class="card-body">
+          <h2 class="card-title text-2xl">{{ t .lang "workers" }}</h2>
+          <div class="form-control w-full">
+            <label class="label" for="WorkerURLs"><span class="label-text font-semibold">Worker URLs</span></label>
+            <textarea id="WorkerURLs" name="WorkerURLs" rows="3" class="textarea textarea-bordered w-full font-mono" placeholder="https://worker-01.example.com:4200">{{ .config.WorkerURLs }}</textarea>
+          </div>
+          <div class="form-control w-full">
+            <label class="label" for="ClusterToken"><span class="label-text font-semibold">Cluster Token</span></label>
+            <input id="ClusterToken" type="password" name="ClusterToken" value="{{ .config.ClusterToken }}" class="input input-bordered w-full" autocomplete="new-password" />
+          </div>
+          <p class="text-sm text-base-content/60">{{ t .lang "workers_restart_hint" }}</p>
+        </div>
+      </div>
+      {{ end }}
 
       <!-- Downloaders Settings -->
       <div class="card bg-base-100 shadow-xl border border-base-300">

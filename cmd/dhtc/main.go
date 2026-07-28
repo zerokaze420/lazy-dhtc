@@ -102,7 +102,7 @@ func main() {
 	}
 	crawler := ui.NewCrawlerManager(cfg, bootstrapNodes, database, nManager, hub)
 	var workerMonitor *cluster.MasterPuller
-	if cfg.NodeRole == "master" && strings.TrimSpace(cfg.WorkerURLs) != "" {
+	if cfg.NodeRole == "master" {
 		puller, err := cluster.NewMasterPuller(splitList(cfg.WorkerURLs), cfg.ClusterToken, func(md dhtcclient.Metadata) bool {
 			return ui.IngestMetadata(cfg, database, nManager, hub, md)
 		})

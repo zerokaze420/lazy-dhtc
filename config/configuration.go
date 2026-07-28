@@ -17,9 +17,9 @@ const (
 
 type Configuration struct {
 	NodeRole     string
-	WorkerURLs   string
-	ClusterToken string
-	WorkerID     string
+	WorkerURLs   string `form:"WorkerURLs"`
+	ClusterToken string `form:"ClusterToken"`
+	WorkerID     string `form:"WorkerID"`
 	WorkerQueue  int
 	WorkerBatch  int
 	DbName       string

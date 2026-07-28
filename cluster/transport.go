@@ -145,9 +145,12 @@ type WorkerStatus struct {
 }
 
 func NewMasterPuller(workerURLs []string, token string, ingest func(dhtcclient.Metadata) bool) (*MasterPuller, error) {
-	if token == "" {
-		return nil, fmt.Errorf("cluster token is required")
-	}
+	puller := &MasterPuller{client: &http.Client{Timeout: 15 * time.Second}, ingest: ingest, status: make(map[string]WorkerStatus)}
+	puller.Configure(workerURLs, token)
+	return puller, nil
+}
+
+func (p *MasterPuller) Configure(workerURLs []string, token string) {
 	workers := make([]string, 0, len(workerURLs))
 	for _, worker := range workerURLs {
 		worker = strings.TrimRight(strings.TrimSpace(worker), "/")
@@ -155,11 +158,17 @@ func NewMasterPuller(workerURLs []string, token string, ingest func(dhtcclient.M
 			workers = append(workers, worker)
 		}
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	status := make(map[string]WorkerStatus, len(workers))
 	for _, worker := range workers {
-		status[worker] = WorkerStatus{URL: worker}
+		current := p.status[worker]
+		current.URL = worker
+		status[worker] = current
 	}
-	return &MasterPuller{workers: workers, token: token, client: &http.Client{Timeout: 15 * time.Second}, ingest: ingest, status: status}, nil
+	p.workers = workers
+	p.token = token
+	p.status = status
 }
 
 func (p *MasterPuller) Status() []WorkerStatus {
@@ -190,8 +199,15 @@ func (p *MasterPuller) Run(ctx context.Context) {
 }
 
 func (p *MasterPuller) pullAll(ctx context.Context) {
-	for _, worker := range p.workers {
-		if err := p.pull(ctx, worker); err != nil {
+	p.mu.RLock()
+	workers := append([]string(nil), p.workers...)
+	token := p.token
+	p.mu.RUnlock()
+	if token == "" {
+		return
+	}
+	for _, worker := range workers {
+		if err := p.pullWithToken(ctx, worker, token); err != nil {
 			p.recordFailure(worker, err)
 			log.Warn().Err(err).Str("worker", worker).Msg("Could not pull worker metadata")
 		}
@@ -208,8 +224,18 @@ func (p *MasterPuller) recordFailure(worker string, err error) {
 }
 
 func (p *MasterPuller) pull(ctx context.Context, worker string) error {
+	p.mu.RLock()
+	token := p.token
+	p.mu.RUnlock()
+	if token == "" {
+		return fmt.Errorf("cluster token is required")
+	}
+	return p.pullWithToken(ctx, worker, token)
+}
+
+func (p *MasterPuller) pullWithToken(ctx context.Context, worker, token string) error {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, worker+QueuePath, nil)
-	req.Header.Set("Authorization", "Bearer "+p.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return err
@@ -236,7 +262,7 @@ func (p *MasterPuller) pull(ctx context.Context, worker string) error {
 	}
 	body, _ := json.Marshal(Ack{IDs: ids})
 	ackReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, worker+QueuePath, bytes.NewReader(body))
-	ackReq.Header.Set("Authorization", "Bearer "+p.token)
+	ackReq.Header.Set("Authorization", "Bearer "+token)
 	ackReq.Header.Set("Content-Type", "application/json")
 	ackResp, err := p.client.Do(ackReq)
 	if err != nil {

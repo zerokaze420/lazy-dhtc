@@ -3,6 +3,7 @@ package ui
 import (
 	"dhtc/config"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -36,7 +37,16 @@ func (c *Controller) SettingsPost(ctx *gin.Context) {
 	if c.Crawler != nil {
 		c.Crawler.ReconcileSchedule()
 	}
+	if c.WorkerMonitor != nil {
+		c.WorkerMonitor.Configure(splitWorkerURLs(c.Configuration.WorkerURLs), c.Configuration.ClusterToken)
+	}
 	h := c.getCommonH(ctx)
 	h["saved"] = true
 	ctx.HTML(http.StatusOK, "settings", h)
+}
+
+func splitWorkerURLs(value string) []string {
+	return strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	})
 }

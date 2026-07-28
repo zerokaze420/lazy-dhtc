@@ -1,5 +1,5 @@
 package: cloud.lazycat.app.dhtc
-version: 1.0.12
+version: 1.0.14
 name: dhtc
 description: Build a private BitTorrent DHT crawler and torrent search engine.
 author: nbdy
