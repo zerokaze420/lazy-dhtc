@@ -57,6 +57,8 @@ type QueryArguments struct {
 	// Scrape indicates if the responding node should add Bloom Filters to the response.
 	// Defined in BEP 33 "DHT Scrapes" for `get_peers` queries.
 	Scrape int `bencode:"scrape,omitempty"`
+	// Want requests IPv4 (n4), IPv6 (n6), or both node address families (BEP 32).
+	Want []string `bencode:"want,omitempty"`
 }
 
 // ResponseValues represents the "r" dictionary in a DHT response.

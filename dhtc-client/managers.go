@@ -25,13 +25,18 @@ type Manager struct {
 	stopOnce         sync.Once
 }
 
-func NewManager(nodes []string, addrs []string, interval time.Duration, maxNeighbors uint, rateLimit int) *Manager {
+type ListenEndpoint struct {
+	Network string
+	Address string
+}
+
+func NewManager(nodes []string, endpoints []ListenEndpoint, interval time.Duration, maxNeighbors uint, rateLimit int) *Manager {
 	manager := new(Manager)
 	manager.output = make(chan Result, 20)
 	manager.done = make(chan struct{})
 
-	for _, addr := range addrs {
-		service := NewIndexingService(addr, interval, maxNeighbors, rateLimit, IndexingServiceEventHandlers{
+	for _, endpoint := range endpoints {
+		service := NewIndexingService(endpoint.Network, endpoint.Address, interval, maxNeighbors, rateLimit, IndexingServiceEventHandlers{
 			OnResult: manager.onIndexingResult,
 		})
 		manager.indexingServices = append(manager.indexingServices, service)

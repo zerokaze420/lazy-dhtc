@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"dhtc/config"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,7 @@ func (c *Controller) SettingsPost(ctx *gin.Context) {
 		ctx.HTML(http.StatusBadRequest, "settings", h)
 		return
 	}
+	c.Configuration.NetworkMode = config.NormalizeNetworkMode(c.Configuration.NetworkMode)
 	if c.Notifier != nil {
 		c.Notifier.Setup(c.Configuration)
 	}

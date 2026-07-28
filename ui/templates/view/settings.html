@@ -309,6 +309,36 @@
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <fieldset class="form-control sm:col-span-2">
+              <legend class="label-text font-semibold mb-2">{{ t .lang "network_mode" }}</legend>
+              <div class="join w-full" role="radiogroup" aria-label="{{ t .lang "network_mode" }}">
+                <input
+                  class="join-item btn flex-1"
+                  type="radio"
+                  name="NetworkMode"
+                  value="ipv4"
+                  aria-label="{{ t .lang "network_mode_ipv4" }}"
+                  {{ if eq .config.NetworkMode "ipv4" }}checked{{ end }}
+                />
+                <input
+                  class="join-item btn flex-1"
+                  type="radio"
+                  name="NetworkMode"
+                  value="ipv6"
+                  aria-label="{{ t .lang "network_mode_ipv6" }}"
+                  {{ if eq .config.NetworkMode "ipv6" }}checked{{ end }}
+                />
+                <input
+                  class="join-item btn flex-1"
+                  type="radio"
+                  name="NetworkMode"
+                  value="dual"
+                  aria-label="{{ t .lang "network_mode_dual" }}"
+                  {{ if eq .config.NetworkMode "dual" }}checked{{ end }}
+                />
+              </div>
+              <p class="text-sm text-base-content/60 mt-2">{{ t .lang "network_mode_hint" }}</p>
+            </fieldset>
             <div class="form-control w-full">
               <label class="label" for="CrawlerThreads">
                 <span class="label-text font-semibold">{{ t .lang "crawler_threads" }}</span>

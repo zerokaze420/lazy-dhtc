@@ -128,9 +128,9 @@ func (m *CrawlerManager) stopLocked() bool {
 }
 
 func (m *CrawlerManager) crawl(stop <-chan struct{}) {
-	indexerAddrs := []string{"0.0.0.0:0"}
+	endpoints := crawlerEndpoints(m.configuration.NetworkMode)
 
-	trawlingManager := dhtcclient.NewManager(m.bootstrapNodes, indexerAddrs, 10*time.Second, m.configuration.MaxNeighbors, m.configuration.RateLimit)
+	trawlingManager := dhtcclient.NewManager(m.bootstrapNodes, endpoints, 10*time.Second, m.configuration.MaxNeighbors, m.configuration.RateLimit)
 	metadataSink := dhtcclient.NewSink(m.configuration.DrainTimeout, m.configuration.MaxLeeches, m.configuration.MaxConcurrentDownloads)
 	defer trawlingManager.Terminate()
 	defer metadataSink.Terminate()
@@ -154,5 +154,19 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}) {
 				m.hub.BroadcastMetadata(md)
 			}
 		}
+	}
+}
+
+func crawlerEndpoints(mode string) []dhtcclient.ListenEndpoint {
+	switch config.NormalizeNetworkMode(mode) {
+	case config.NetworkModeIPv6:
+		return []dhtcclient.ListenEndpoint{{Network: "udp6", Address: "[::]:0"}}
+	case config.NetworkModeDual:
+		return []dhtcclient.ListenEndpoint{
+			{Network: "udp4", Address: "0.0.0.0:0"},
+			{Network: "udp6", Address: "[::]:0"},
+		}
+	default:
+		return []dhtcclient.ListenEndpoint{{Network: "udp4", Address: "0.0.0.0:0"}}
 	}
 }

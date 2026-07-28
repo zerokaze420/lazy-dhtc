@@ -47,10 +47,10 @@ type ProtocolEventHandlers struct {
 }
 
 // NewProtocol creates a new DHT protocol handler.
-func NewProtocol(laddr string, rateLimit int, eventHandlers ProtocolEventHandlers) (p *Protocol) {
+func NewProtocol(network string, laddr string, rateLimit int, eventHandlers ProtocolEventHandlers) (p *Protocol) {
 	p = new(Protocol)
 	p.eventHandlers = eventHandlers
-	p.transport = NewTransport(laddr, rateLimit, p.onMessage, p.eventHandlers.OnCongestion)
+	p.transport = NewTransport(network, laddr, rateLimit, p.onMessage, p.eventHandlers.OnCongestion)
 
 	p.currentTokenSecret, p.previousTokenSecret = make([]byte, 20), make([]byte, 20)
 	_, err := rand.Read(p.currentTokenSecret)
@@ -172,7 +172,7 @@ func (p *Protocol) onMessage(msg *Message, addr *net.UDPAddr) {
 			if p.eventHandlers.OnGetPeersResponse != nil {
 				p.eventHandlers.OnGetPeersResponse(msg, addr)
 			}
-		} else if len(msg.R.Nodes) != 0 { // The message should be a find_node response.
+		} else if len(msg.R.Nodes) != 0 || len(msg.R.Nodes6) != 0 { // The message should be a find_node response.
 			if !validateFindNodeResponseMessage(msg) {
 				// zap.L().Debug("An invalid find_node response received!")
 				return
@@ -212,7 +212,7 @@ func (p *Protocol) SendMessage(msg *Message, addr *net.UDPAddr) {
 }
 
 // NewFindNodeQuery creates a new find_node query message.
-func NewFindNodeQuery(id []byte, target []byte) *Message {
+func NewFindNodeQuery(id []byte, target []byte, want []string) *Message {
 	return &Message{
 		Y: "q",
 		T: []byte("aa"),
@@ -220,12 +220,13 @@ func NewFindNodeQuery(id []byte, target []byte) *Message {
 		A: QueryArguments{
 			ID:     id,
 			Target: target,
+			Want:   want,
 		},
 	}
 }
 
 // NewGetPeersQuery creates a new get_peers query message.
-func NewGetPeersQuery(id []byte, infoHash []byte) *Message {
+func NewGetPeersQuery(id []byte, infoHash []byte, want []string) *Message {
 	return &Message{
 		Y: "q",
 		T: []byte("aa"),
@@ -233,12 +234,13 @@ func NewGetPeersQuery(id []byte, infoHash []byte) *Message {
 		A: QueryArguments{
 			ID:       id,
 			InfoHash: infoHash,
+			Want:     want,
 		},
 	}
 }
 
 // NewSampleInfohashesQuery creates a new sample_infohashes query message.
-func NewSampleInfohashesQuery(id []byte, t []byte, target []byte) *Message {
+func NewSampleInfohashesQuery(id []byte, t []byte, target []byte, want []string) *Message {
 	return &Message{
 		Y: "q",
 		T: t,
@@ -246,6 +248,7 @@ func NewSampleInfohashesQuery(id []byte, t []byte, target []byte) *Message {
 		A: QueryArguments{
 			ID:     id,
 			Target: target,
+			Want:   want,
 		},
 	}
 }

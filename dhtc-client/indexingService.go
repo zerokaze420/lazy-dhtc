@@ -2,8 +2,10 @@ package dhtc_client
 
 import (
 	"container/list"
+	"context"
 	"crypto/rand"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -13,6 +15,8 @@ import (
 type IndexingService struct {
 	// Private
 	protocol      *Protocol
+	network       string
+	want          []string
 	started       bool
 	interval      time.Duration
 	eventHandlers IndexingServiceEventHandlers
@@ -48,10 +52,17 @@ func (ir IndexingResult) PeerAddrs() []net.TCPAddr {
 	return ir.peerAddrs
 }
 
-func NewIndexingService(laddr string, interval time.Duration, maxNeighbors uint, rateLimit int, eventHandlers IndexingServiceEventHandlers) *IndexingService {
+func NewIndexingService(network string, laddr string, interval time.Duration, maxNeighbors uint, rateLimit int, eventHandlers IndexingServiceEventHandlers) *IndexingService {
 	service := new(IndexingService)
+	service.network = network
+	if network == "udp6" {
+		service.want = []string{"n6"}
+	} else {
+		service.want = []string{"n4"}
+	}
 	service.interval = interval
 	service.protocol = NewProtocol(
+		network,
 		laddr,
 		rateLimit,
 		ProtocolEventHandlers{
@@ -148,13 +159,15 @@ func (is *IndexingService) bootstrap(nodes []string) {
 			log.Panic().Msg("Could NOT generate random bytes during bootstrapping!")
 		}
 
-		addr, err := net.ResolveUDPAddr("udp", node)
+		addrs, err := resolveBootstrapAddresses(is.network, node)
 		if err != nil {
 			log.Error().Err(err).Str("node", node).Msg("Could NOT resolve (UDP) address of the bootstrapping node!")
 			continue
 		}
 
-		is.protocol.SendMessage(NewFindNodeQuery(is.nodeID, target), addr)
+		for _, addr := range addrs {
+			is.protocol.SendMessage(NewFindNodeQuery(is.nodeID, target, is.want), addr)
+		}
 	}
 }
 
@@ -188,7 +201,7 @@ func (is *IndexingService) findNeighbors() {
 		}
 
 		is.protocol.SendMessage(
-			NewSampleInfohashesQuery(is.nodeID, []byte("aa"), target),
+			NewSampleInfohashesQuery(is.nodeID, []byte("aa"), target, is.want),
 			addr,
 		)
 	}
@@ -200,6 +213,10 @@ func (is *IndexingService) addNode(id []byte, addr *net.UDPAddr) {
 	}
 
 	if addr.Port == 0 {
+		return
+	}
+	is4 := addr.IP.To4() != nil
+	if (is.network == "udp4" && !is4) || (is.network == "udp6" && is4) {
 		return
 	}
 
@@ -234,7 +251,7 @@ func (is *IndexingService) addNode(id []byte, addr *net.UDPAddr) {
 		log.Panic().Msg("Could NOT generate random bytes!")
 	}
 	is.protocol.SendMessage(
-		NewSampleInfohashesQuery(is.nodeID, []byte("aa"), target),
+		NewSampleInfohashesQuery(is.nodeID, []byte("aa"), target, is.want),
 		addr,
 	)
 }
@@ -247,6 +264,9 @@ func (is *IndexingService) onFindNodeResponse(response *Message, addr *net.UDPAd
 	is.addNode(response.R.ID, addr)
 
 	for _, node := range response.R.Nodes {
+		is.addNode(node.ID, &node.Addr)
+	}
+	for _, node := range response.R.Nodes6 {
 		is.addNode(node.ID, &node.Addr)
 	}
 }
@@ -326,7 +346,7 @@ func (is *IndexingService) requestPeers(infoHash []byte, addr *net.UDPAddr) {
 		return
 	}
 
-	msg := NewGetPeersQuery(is.nodeID, infoHash)
+	msg := NewGetPeersQuery(is.nodeID, infoHash, is.want)
 	t := uint16BE(is.counter)
 	msg.T = t[:]
 
@@ -355,8 +375,42 @@ func (is *IndexingService) onSampleInfohashesQuery(msg *Message, addr *net.UDPAd
 	}
 	is.routingTableMutex.RUnlock()
 
-	response := NewSampleInfohashesResponse(msg.T, is.nodeID, int(is.interval.Seconds()), nodes, nil, 0, nil)
+	nodes4 := make(CompactNodeInfos, 0, len(nodes))
+	nodes6 := make(CompactNodeInfos, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Addr.IP.To4() == nil {
+			nodes6 = append(nodes6, node)
+		} else {
+			nodes4 = append(nodes4, node)
+		}
+	}
+	response := NewSampleInfohashesResponse(msg.T, is.nodeID, int(is.interval.Seconds()), nodes4, nodes6, 0, nil)
 	is.protocol.SendMessage(response, addr)
+}
+
+func resolveBootstrapAddresses(network, node string) ([]*net.UDPAddr, error) {
+	host, portText, err := net.SplitHostPort(node)
+	if err != nil {
+		return nil, err
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return nil, err
+	}
+
+	ips, err := net.DefaultResolver.LookupIP(context.Background(), "ip", host)
+	if err != nil {
+		return nil, err
+	}
+	addrs := make([]*net.UDPAddr, 0, len(ips))
+	for _, ip := range ips {
+		is4 := ip.To4() != nil
+		if (network == "udp4" && !is4) || (network == "udp6" && is4) {
+			continue
+		}
+		addrs = append(addrs, &net.UDPAddr{IP: ip, Port: port})
+	}
+	return addrs, nil
 }
 
 func uint16BE(v uint16) (b [2]byte) {

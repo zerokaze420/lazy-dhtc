@@ -7,7 +7,7 @@ import (
 )
 
 func TestVerifyToken(t *testing.T) {
-	p := NewProtocol(":0", 100, ProtocolEventHandlers{})
+	p := NewProtocol("udp4", ":0", 100, ProtocolEventHandlers{})
 	addr := net.ParseIP("127.0.0.1")
 	token := p.CalculateToken(addr)
 
@@ -42,5 +42,36 @@ func TestVerifyToken(t *testing.T) {
 	newToken := p.CalculateToken(addr)
 	if !p.VerifyToken(addr, newToken) {
 		t.Error("VerifyToken failed for new current token")
+	}
+}
+
+func TestQueriesIncludeWantedAddressFamily(t *testing.T) {
+	want := []string{"n4", "n6"}
+	queries := []*Message{
+		NewFindNodeQuery(make([]byte, 20), make([]byte, 20), want),
+		NewGetPeersQuery(make([]byte, 20), make([]byte, 20), want),
+		NewSampleInfohashesQuery(make([]byte, 20), []byte("aa"), make([]byte, 20), want),
+	}
+	for _, query := range queries {
+		if len(query.A.Want) != 2 || query.A.Want[0] != "n4" || query.A.Want[1] != "n6" {
+			t.Fatalf("query does not preserve want: %#v", query.A.Want)
+		}
+	}
+}
+
+func TestFindNodeResponseAcceptsNodes6Only(t *testing.T) {
+	msg := &Message{
+		Y: "r",
+		T: []byte("aa"),
+		R: ResponseValues{
+			ID: make([]byte, 20),
+			Nodes6: CompactNodeInfos{{
+				ID:   make([]byte, 20),
+				Addr: net.UDPAddr{IP: net.ParseIP("2001:db8::1"), Port: 6881},
+			}},
+		},
+	}
+	if !validateFindNodeResponseMessage(msg) {
+		t.Fatal("IPv6-only find_node response should be valid")
 	}
 }

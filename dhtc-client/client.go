@@ -228,7 +228,11 @@ func (c *Client) readExMessage() ([]byte, error) {
 func (c *Client) connect(deadline time.Time) error {
 	var err error
 
-	x, err := net.DialTimeout("tcp4", c.peerAddr.String(), 1*time.Second)
+	network := "tcp6"
+	if c.peerAddr.IP.To4() != nil {
+		network = "tcp4"
+	}
+	x, err := net.DialTimeout(network, c.peerAddr.String(), 1*time.Second)
 	if err != nil {
 		return errors.Wrap(err, "dial")
 	}

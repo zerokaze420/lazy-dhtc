@@ -17,6 +17,7 @@ type sendRequest struct {
 
 // Transport represents a DHT transport layer.
 type Transport struct {
+	network string
 	fd      *net.UDPConn
 	laddr   *net.UDPAddr
 	started bool
@@ -36,8 +37,9 @@ type Transport struct {
 }
 
 // NewTransport creates a new DHT transport layer.
-func NewTransport(laddr string, rateLimit int, onMessage func(*Message, *net.UDPAddr), onCongestion func()) *Transport {
+func NewTransport(network string, laddr string, rateLimit int, onMessage func(*Message, *net.UDPAddr), onCongestion func()) *Transport {
 	t := new(Transport)
+	t.network = network
 	/*   The field size sets a theoretical limit of 65,535 bytes (8 byte header + 65,527 bytes of
 	 * data) for a UDP datagram. However, the actual limit for the data length, which is imposed by
 	 * the underlying IPv4 protocol, is 65,507 bytes (65,535 − 8 byte UDP header − 20 byte IP
@@ -60,7 +62,7 @@ func NewTransport(laddr string, rateLimit int, onMessage func(*Message, *net.UDP
 	t.done = make(chan struct{})
 
 	var err error
-	t.laddr, err = net.ResolveUDPAddr("udp", laddr)
+	t.laddr, err = net.ResolveUDPAddr(network, laddr)
 	if err != nil {
 		log.Panic().Msg("Could not resolve the UDP address for the trawler!")
 		log.Panic().Err(err)
@@ -85,7 +87,7 @@ func (t *Transport) Start() {
 	t.started = true
 
 	var err error
-	t.fd, err = net.ListenUDP("udp", t.laddr)
+	t.fd, err = net.ListenUDP(t.network, t.laddr)
 
 	if err != nil {
 		log.Fatal().Msg("Could NOT bind the socket!")

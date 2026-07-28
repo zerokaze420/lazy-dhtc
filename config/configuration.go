@@ -2,7 +2,14 @@ package config
 
 import (
 	"flag"
+	"strings"
 	"time"
+)
+
+const (
+	NetworkModeIPv4 = "ipv4"
+	NetworkModeIPv6 = "ipv6"
+	NetworkModeDual = "dual"
 )
 
 type Configuration struct {
@@ -26,12 +33,13 @@ type Configuration struct {
 
 	SafeMode bool `form:"SafeMode"`
 
-	CrawlerThreads         int  `form:"CrawlerThreads"`
-	MaxConcurrentDownloads int  `form:"MaxConcurrentDownloads"`
-	RateLimit              int  `form:"RateLimit"`
-	CrawlerAutoStopMinutes int  `form:"CrawlerAutoStopMinutes"`
-	CrawlerStartOnLaunch   bool `form:"CrawlerStartOnLaunch"`
-	MaxSavedTorrents       int  `form:"MaxSavedTorrents"`
+	CrawlerThreads         int    `form:"CrawlerThreads"`
+	MaxConcurrentDownloads int    `form:"MaxConcurrentDownloads"`
+	RateLimit              int    `form:"RateLimit"`
+	CrawlerAutoStopMinutes int    `form:"CrawlerAutoStopMinutes"`
+	CrawlerStartOnLaunch   bool   `form:"CrawlerStartOnLaunch"`
+	MaxSavedTorrents       int    `form:"MaxSavedTorrents"`
+	NetworkMode            string `form:"NetworkMode"`
 
 	EnableBlacklist    bool   `form:"EnableBlacklist"`
 	NameBlacklist      string `form:"NameBlacklist"`
@@ -90,6 +98,7 @@ func ParseArguments() *Configuration {
 	flag.IntVar(&config.CrawlerAutoStopMinutes, "CrawlerAutoStopMinutes", 0, "automatically stop crawler after N minutes (0 disables auto-stop)")
 	flag.BoolVar(&config.CrawlerStartOnLaunch, "CrawlerStartOnLaunch", false, "start crawler automatically when the app launches")
 	flag.IntVar(&config.MaxSavedTorrents, "MaxSavedTorrents", 20000, "maximum saved torrents before pruning oldest entries (0 disables pruning)")
+	flag.StringVar(&config.NetworkMode, "NetworkMode", "ipv4", "DHT network mode (ipv4, ipv6, dual)")
 
 	flag.BoolVar(&config.EnableBlacklist, "EnableBlacklist", false, "enable blacklists")
 	flag.StringVar(&config.NameBlacklist, "NameBlacklist", "", "blacklist for torrent names")
@@ -120,6 +129,18 @@ func ParseArguments() *Configuration {
 	flag.StringVar(&config.QBittorrentPass, "qbittorrent-pass", "", "qBittorrent password")
 
 	flag.Parse()
+	config.NetworkMode = NormalizeNetworkMode(config.NetworkMode)
 
 	return &config
+}
+
+func NormalizeNetworkMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case NetworkModeIPv6:
+		return NetworkModeIPv6
+	case NetworkModeDual:
+		return NetworkModeDual
+	default:
+		return NetworkModeIPv4
+	}
 }

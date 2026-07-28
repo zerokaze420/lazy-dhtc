@@ -96,8 +96,7 @@ func TestUnmarshalCompactPeers(t *testing.T) {
 	}{
 		{"empty", []byte{}, 0, false},
 		{"single ipv4", ipv4Peer, 1, false},
-		// 18 bytes will be interpreted as 3 IPv4 peers because it's multiple of 6.
-		{"single ipv6 (interprets as 3 ipv4)", ipv6Peer, 3, false},
+		{"single ipv6 ambiguous string", ipv6Peer, 3, false},
 		{"multiple ipv4", append(ipv4Peer, ipv4Peer...), 2, false},
 		{"invalid length", append(ipv4Peer, 1, 2, 3), 0, true},
 	}
@@ -113,6 +112,21 @@ func TestUnmarshalCompactPeers(t *testing.T) {
 				t.Errorf("UnmarshalCompactPeers() len = %v, want %v", len(got), tt.wantLen)
 			}
 		})
+	}
+}
+
+func TestCompactPeersBencodePreservesIPv6ItemSize(t *testing.T) {
+	peers := CompactPeers{{IP: net.ParseIP("2001:db8::1"), Port: 6881}}
+	b, err := peers.MarshalBencode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded CompactPeers
+	if err := decoded.UnmarshalBencode(b); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded) != 1 || !decoded[0].IP.Equal(net.ParseIP("2001:db8::1")) {
+		t.Fatalf("unexpected decoded IPv6 peers: %#v", decoded)
 	}
 }
 
