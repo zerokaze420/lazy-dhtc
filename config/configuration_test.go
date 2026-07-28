@@ -37,3 +37,9 @@ func TestNormalizeLegacyIPv6ModeToDual(t *testing.T) {
 		t.Fatalf("legacy ipv6 mode = %q, want dual", got)
 	}
 }
+
+func TestNormalizeNodeRole(t *testing.T) {
+	if NormalizeNodeRole("WORKER") != "worker" || NormalizeNodeRole("unknown") != "standalone" {
+		t.Fatal("node role normalization failed")
+	}
+}

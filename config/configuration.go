@@ -15,6 +15,12 @@ const (
 )
 
 type Configuration struct {
+	NodeRole     string
+	MasterURL    string
+	ClusterToken string
+	WorkerID     string
+	WorkerQueue  int
+	WorkerBatch  int
 	DbName       string
 	DatabaseType string
 	DatabaseUrl  string
@@ -130,6 +136,13 @@ func ParseArguments() *Configuration {
 		return fallback
 	}
 
+	flag.StringVar(&config.NodeRole, "node-role", "standalone", "node role (standalone, master, worker)")
+	flag.StringVar(&config.MasterURL, "master-url", "", "master base URL for worker uploads")
+	flag.StringVar(&config.ClusterToken, "cluster-token", "", "shared token for worker authentication")
+	flag.StringVar(&config.WorkerID, "worker-id", "", "stable worker identifier")
+	flag.IntVar(&config.WorkerQueue, "worker-queue", 256, "maximum metadata records buffered by a worker")
+	flag.IntVar(&config.WorkerBatch, "worker-batch", 16, "maximum metadata records per worker upload")
+
 	flag.StringVar(&config.DbName, "database", "dhtdb", "database name (for CloverDB)")
 	flag.StringVar(&config.DatabaseType, "database-type", "clover", "database type (clover, sqlite, postgres, mysql)")
 	flag.StringVar(&config.DatabaseUrl, "database-url", "", "database URL (for GORM backends)")
@@ -195,8 +208,20 @@ func ParseArguments() *Configuration {
 
 	flag.Parse()
 	config.NetworkMode = NormalizeNetworkMode(config.NetworkMode)
+	config.NodeRole = NormalizeNodeRole(config.NodeRole)
 
 	return &config
+}
+
+func NormalizeNodeRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "master":
+		return "master"
+	case "worker":
+		return "worker"
+	default:
+		return "standalone"
+	}
 }
 
 func argumentValue(name string) string {

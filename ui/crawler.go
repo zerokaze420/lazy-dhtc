@@ -43,6 +43,7 @@ type CrawlerManager struct {
 	manualOverride  bool
 	manualRun       bool
 	manualUntil     time.Time
+	onMetadata      func(dhtcclient.Metadata) bool
 }
 
 func NewCrawlerManager(configuration *config.Configuration, bootstrapNodes4 []string, database db.Repository, nManager *notifier.Manager, hub *Hub) *CrawlerManager {
@@ -52,6 +53,25 @@ func NewCrawlerManager(configuration *config.Configuration, bootstrapNodes4 []st
 		notifier:        nManager,
 		hub:             hub,
 		bootstrapNodes4: bootstrapNodes4,
+	}
+	manager.onMetadata = func(md dhtcclient.Metadata) bool {
+		if !manager.database.InsertMetadata(md) {
+			return false
+		}
+		fmt.Println("\t + Added:", md.Name)
+		db.CheckWatches(manager.configuration, manager.database, md, manager.notifier)
+		manager.hub.BroadcastMetadata(md)
+		return true
+	}
+	go manager.scheduleLoop()
+	return manager
+}
+
+func NewWorkerCrawlerManager(configuration *config.Configuration, bootstrapNodes4 []string, onMetadata func(dhtcclient.Metadata) bool) *CrawlerManager {
+	manager := &CrawlerManager{
+		configuration:   configuration,
+		bootstrapNodes4: bootstrapNodes4,
+		onMetadata:      onMetadata,
 	}
 	go manager.scheduleLoop()
 	return manager
@@ -272,10 +292,8 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
 			if !ok {
 				return
 			}
-			if m.database.InsertMetadata(md) {
-				fmt.Println("\t + Added:", md.Name)
-				db.CheckWatches(m.configuration, m.database, md, m.notifier)
-				m.hub.BroadcastMetadata(md)
+			if m.onMetadata != nil {
+				m.onMetadata(md)
 			}
 		}
 	}

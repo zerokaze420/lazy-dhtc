@@ -153,6 +153,12 @@ go run ./cmd/dhtc
 | `-RoutingTableCacheIPv4` | `routing-table-v4.json` | IPv4 路由表缓存 |
 | `-RoutingTableCacheIPv6` | `routing-table-v6.json` | IPv6 路由表缓存 |
 | `-config` | 空 | 可选的双栈 YAML 配置文件 |
+| `-node-role` | `standalone` | 节点角色：`standalone`、`master`、`worker` |
+| `-master-url` | 空 | Worker 上报目标，例如 `http://master:4200` |
+| `-cluster-token` | 空 | Master 与 Worker 共享的鉴权 Token |
+| `-worker-id` | `worker` | Worker 唯一标识 |
+| `-worker-queue` | `256` | Worker 内存待发送队列上限 |
+| `-worker-batch` | `16` | Worker 单次上传数量 |
 | `-CrawlerAutoStopMinutes` | `0` | 自动停止采集的分钟数，`0` 表示不自动停止 |
 | `-MaxSavedTorrents` | `20000` | 最多保存的种子数量，`0` 表示不限制 |
 | `-OnlyChineseContent` | `false` | 仅保存名称或文件路径包含中文字符的种子 |
@@ -196,6 +202,34 @@ crawler:
 使用 `go run ./cmd/dhtc -config dhtc.yml` 启动。显式命令行参数会覆盖 YAML 中对应的网络模式、监听地址和缓存路径。
 
 运行时由一个 Scheduler 管理 IPv4/IPv6 DHT Network。两套 Network 发现的 InfoHash 汇入同一个队列，由共享的 Metadata Downloader 去重并根据 Peer 地址自动选择 `tcp4` 或 `tcp6`，最后写入同一个数据库。InfoHash 不区分地址族，数据库结构无需修改。
+
+## 主从部署
+
+`master` 负责数据库、搜索、Dashboard、统计、通知和 Worker 数据接收。`worker` 只运行 DHT、Metadata 下载、内存发送队列和健康检查，不打开数据库，也不加载完整 Web UI。
+
+Master 示例：
+
+```shell
+dhtc -node-role master -cluster-token "change-me" -database-type postgres -database-url "postgres://..."
+```
+
+低资源 Worker 示例：
+
+```shell
+dhtc \
+  -node-role worker \
+  -master-url "http://master:4200" \
+  -cluster-token "change-me" \
+  -worker-id "edge-01" \
+  -MaxConcurrentDownloads 2 \
+  -MaxLeeches 32 \
+  -worker-queue 256 \
+  -worker-batch 16
+```
+
+Worker 最低建议配置为 `1 vCPU、512 MB 内存、256 MB 可用磁盘`。磁盘主要保存 IPv4/IPv6 路由表缓存；待发送 Metadata 当前使用有界内存队列，不写本地种子数据库。更稳定的配置为 `1 vCPU、1 GB 内存`。
+
+Master 暂时不可达时，Worker 会保留一个固定批次并重试，队列满后拒绝新数据并记录丢弃数量，避免低配节点内存持续增长。Worker 健康接口 `/health` 会返回当前排队数和丢弃数。本阶段尚未实现磁盘补发队列，因此 Worker 重启会丢失尚未上传的数据。
 
 ## MCP 接口
 

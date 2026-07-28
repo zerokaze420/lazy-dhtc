@@ -2,13 +2,19 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"dhtc/cache"
+	"dhtc/cluster"
 	"dhtc/config"
 	"dhtc/db"
 	"dhtc/notifier"
 	"dhtc/ui"
+	"fmt"
+	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -64,6 +70,15 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
 	cfg := config.ParseArguments()
+	bootstrapNodes := ReadFileLines(cfg.BootstrapNodeFile)
+	bootstrapNodes = append(bootstrapNodes, cfg.BootstrapIPv4...)
+	if len(bootstrapNodes) == 0 {
+		bootstrapNodes = defaultBootstrapNodes
+	}
+	if cfg.NodeRole == "worker" {
+		runWorker(cfg, bootstrapNodes)
+		return
+	}
 	database, err := db.OpenRepository(cfg)
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not open database")
@@ -73,15 +88,6 @@ func main() {
 
 	database.AddToBlacklist(ReadFileLines(cfg.NameBlacklist), "0")
 	database.AddToBlacklist(ReadFileLines(cfg.FileBlacklist), "1")
-
-	bootstrapNodes := ReadFileLines(cfg.BootstrapNodeFile)
-	bootstrapNodes = append(bootstrapNodes, cfg.BootstrapIPv4...)
-
-	if len(bootstrapNodes) == 0 {
-		log.Warn().Msg("No bootstrap nodes found in '" + cfg.BootstrapNodeFile + "'.")
-		log.Info().Msg("Using default bootstrap nodes.")
-		bootstrapNodes = defaultBootstrapNodes
-	}
 
 	hub := ui.NewHub()
 	go hub.Run()
@@ -99,4 +105,43 @@ func main() {
 	}
 
 	ui.RunWebServer(cfg, database, hub, nManager, crawler)
+}
+
+func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
+	if cfg.MaxConcurrentDownloads == 10 {
+		cfg.MaxConcurrentDownloads = 2
+	}
+	if cfg.MaxLeeches == 128 {
+		cfg.MaxLeeches = 32
+	}
+	sink, err := cluster.NewWorkerSink(cfg.MasterURL, cfg.ClusterToken, cfg.WorkerID, cfg.WorkerQueue, cfg.WorkerBatch)
+	if err != nil {
+		log.Fatal().Err(err).Msg("invalid worker configuration")
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	go sink.Run(ctx)
+	crawler := ui.NewWorkerCrawlerManager(cfg, bootstrapNodes, sink.Enqueue)
+	if !cfg.CrawlerScheduleEnabled {
+		crawler.Start()
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"status":"ok","role":"worker","queued":%d,"dropped":%d}`, sink.QueueLength(), sink.Dropped())
+	})
+	server := &http.Server{Addr: cfg.Address, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error().Err(err).Msg("worker health server stopped")
+			cancel()
+		}
+	}()
+	log.Info().Str("worker_id", cfg.WorkerID).Str("master", cfg.MasterURL).Int("queue", cfg.WorkerQueue).Int("batch", cfg.WorkerBatch).Msg("Worker started")
+	<-ctx.Done()
+	crawler.Stop()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	_ = server.Shutdown(shutdownCtx)
 }

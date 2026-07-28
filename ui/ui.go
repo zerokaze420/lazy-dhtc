@@ -76,9 +76,16 @@ func RunWebServer(configuration *config.Configuration, database db.Repository, h
 	srv.Use(sessions.Sessions("dhtc-session", store))
 
 	if configuration.AuthUser != "" && configuration.AuthPass != "" {
-		srv.Use(gin.BasicAuth(gin.Accounts{
+		basicAuth := gin.BasicAuth(gin.Accounts{
 			configuration.AuthUser: configuration.AuthPass,
-		}))
+		})
+		srv.Use(func(ctx *gin.Context) {
+			if ctx.Request.URL.Path == "/api/worker/v1/metadata" {
+				ctx.Next()
+				return
+			}
+			basicAuth(ctx)
+		})
 	}
 
 	uiCtrl := Controller{
@@ -127,6 +134,7 @@ func RunWebServer(configuration *config.Configuration, database db.Repository, h
 		api.GET("/categories", uiCtrl.APICategories)
 		api.GET("/latest", uiCtrl.APILatest)
 	}
+	srv.POST("/api/worker/v1/metadata", uiCtrl.WorkerMetadataIngest)
 
 	css, _ := fs.Sub(static, "static/css")
 	js, _ := fs.Sub(static, "static/js")
