@@ -19,9 +19,11 @@ type Configuration struct {
 	NodeRole     string
 	WorkerURLs   string `form:"WorkerURLs"`
 	ClusterToken string `form:"ClusterToken"`
-	WorkerID     string `form:"WorkerID"`
-	WorkerQueue  int
-	WorkerBatch  int
+	WorkerID      string `form:"WorkerID"`
+	WorkerQueue   int
+	WorkerBatch   int
+	WorkerCacheDir string
+	MasterURL     string
 	DbName       string
 	DatabaseType string
 	DatabaseUrl  string
@@ -147,6 +149,8 @@ func ParseArguments() *Configuration {
 	flag.StringVar(&config.WorkerID, "worker-id", os.Getenv("DHTC_WORKER_ID"), "stable worker identifier")
 	flag.IntVar(&config.WorkerQueue, "worker-queue", 256, "maximum metadata records buffered by a worker")
 	flag.IntVar(&config.WorkerBatch, "worker-batch", 16, "maximum metadata records per worker upload")
+	flag.StringVar(&config.WorkerCacheDir, "worker-cache-dir", "", "worker persistent cache directory (default: same as -address)")
+	flag.StringVar(&config.MasterURL, "master-url", "", "master URL for worker push mode (worker pushes instead of master pull)")
 
 	flag.StringVar(&config.DbName, "database", "dhtdb", "database name (for CloverDB)")
 	flag.StringVar(&config.DatabaseType, "database-type", "clover", "database type (clover, sqlite, postgres, mysql)")

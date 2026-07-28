@@ -16,6 +16,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type getPeersEntry struct {
+	infoHash  []byte
+	createdAt time.Time
+}
+
 type IndexingService struct {
 	// Private
 	protocol      *Protocol
@@ -35,7 +40,7 @@ type IndexingService struct {
 	routingTable *RoutingTable
 
 	counter          uint16
-	getPeersRequests map[[2]byte][]byte // GetPeersQuery.`t` -> infohash
+	getPeersRequests map[[2]byte]getPeersEntry
 	requestsMu       sync.Mutex
 
 	probeCache   map[netip.Addr]time.Time
@@ -98,7 +103,7 @@ func NewIndexingService(network string, laddr string, cachePath string, interval
 	service.eventHandlers = eventHandlers
 	service.done = make(chan struct{})
 
-	service.getPeersRequests = make(map[[2]byte][]byte)
+	service.getPeersRequests = make(map[[2]byte]getPeersEntry)
 	service.probeCache = make(map[netip.Addr]time.Time)
 
 	return service
@@ -217,6 +222,7 @@ func (is *IndexingService) runMaintenance(nodes []string) {
 		is.routingTable.Prune(time.Now().Add(-5 * time.Minute))
 	}
 	is.pruneProbeCache()
+	is.expireOldGetPeersRequests()
 }
 
 type routingCacheEntry struct {
@@ -384,12 +390,13 @@ func (is *IndexingService) onGetPeersResponse(msg *Message, addr netip.AddrPort)
 	copy(t[:], msg.T)
 
 	is.requestsMu.Lock()
-	infoHash := is.getPeersRequests[t]
+	entry, ok := is.getPeersRequests[t]
 	delete(is.getPeersRequests, t)
 	is.requestsMu.Unlock()
-	if len(infoHash) == 0 {
+	if !ok {
 		return
 	}
+	infoHash := entry.infoHash
 
 	// BEP 51 specifies that
 	//     The new sample_infohashes remote procedure call requests that a remote node return a string of multiple
@@ -481,14 +488,14 @@ func (is *IndexingService) requestPeers(infoHash []byte, addr netip.AddrPort) {
 
 	is.requestsMu.Lock()
 	var t [2]byte
-	for {
+	for range 65536 {
 		t = uint16BE(is.counter)
 		is.counter++
-		if _, exists := is.getPeersRequests[t]; !exists {
+		if entry, exists := is.getPeersRequests[t]; !exists || time.Since(entry.createdAt) > 5*time.Minute {
 			break
 		}
 	}
-	is.getPeersRequests[t] = append([]byte(nil), infoHash...)
+	is.getPeersRequests[t] = getPeersEntry{infoHash: append([]byte(nil), infoHash...), createdAt: time.Now()}
 	is.requestsMu.Unlock()
 
 	msg := NewGetPeersQuery(is.nodeID, infoHash, is.want)
@@ -519,6 +526,17 @@ func (is *IndexingService) addressFamily() int {
 		return 6
 	}
 	return 4
+}
+
+func (is *IndexingService) expireOldGetPeersRequests() {
+	cutoff := time.Now().Add(-5 * time.Minute)
+	is.requestsMu.Lock()
+	defer is.requestsMu.Unlock()
+	for t, entry := range is.getPeersRequests {
+		if entry.createdAt.Before(cutoff) {
+			delete(is.getPeersRequests, t)
+		}
+	}
 }
 
 func (is *IndexingService) pruneProbeCache() {

@@ -4,6 +4,7 @@ import (
 	"dhtc/cluster"
 	"dhtc/config"
 	"dhtc/db"
+	dhtcclient "dhtc/dhtc-client"
 	"dhtc/notifier"
 	"html/template"
 	"io/fs"
@@ -124,6 +125,11 @@ func RunWebServer(configuration *config.Configuration, database db.Repository, h
 	srv.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+	if configuration.NodeRole == "master" && configuration.ClusterToken != "" {
+		srv.POST("/api/master/v1/flush", gin.WrapH(cluster.NewMasterFlushHandler(configuration.ClusterToken, func(md dhtcclient.Metadata) bool {
+			return IngestMetadata(configuration, database, nManager, hub, md)
+		})))
+	}
 	srv.GET("/mcp", uiCtrl.MCP)
 	srv.POST("/mcp", uiCtrl.MCP)
 

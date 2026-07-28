@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,7 @@ import (
 )
 
 const QueuePath = "/api/worker/v1/queue"
+const FlushPath = "/api/master/v1/flush"
 
 type Record struct {
 	ID       uint64              `json:"id"`
@@ -37,23 +39,31 @@ type Ack struct {
 }
 
 type WorkerQueue struct {
-	workerID string
-	limit    int
-	mu       sync.Mutex
-	nextID   uint64
-	items    []Record
-	dropped  atomic.Uint64
-	onAck    func(dhtcclient.Metadata)
+	workerID    string
+	limit       int
+	mu          sync.Mutex
+	nextID      uint64
+	items       []Record
+	dropped     atomic.Uint64
+	onAck       func(dhtcclient.Metadata)
+	cachePath   string
+	masterURL   string
+	clusterToken string
+	flushCtx    context.Context
+	stopFlush   context.CancelFunc
+	flushing    atomic.Bool
 }
 
-func NewWorkerQueue(workerID string, limit int, onAck func(dhtcclient.Metadata)) *WorkerQueue {
+func NewWorkerQueue(workerID string, limit int, cachePath string, onAck func(dhtcclient.Metadata)) *WorkerQueue {
 	if workerID == "" {
 		workerID = "worker"
 	}
 	if limit < 1 {
 		limit = 256
 	}
-	return &WorkerQueue{workerID: workerID, limit: limit, onAck: onAck}
+	q := &WorkerQueue{workerID: workerID, limit: limit, onAck: onAck, cachePath: cachePath}
+	q.loadFromCache()
+	return q
 }
 
 func (q *WorkerQueue) Enqueue(md dhtcclient.Metadata) bool {
@@ -66,6 +76,7 @@ func (q *WorkerQueue) Enqueue(md dhtcclient.Metadata) bool {
 	}
 	q.nextID++
 	q.items = append(q.items, Record{ID: q.nextID, Metadata: md})
+	q.saveToCache()
 	return true
 }
 
@@ -95,6 +106,7 @@ func (q *WorkerQueue) Ack(ids []uint64) {
 		}
 	}
 	q.items = kept
+	q.saveToCache()
 	q.mu.Unlock()
 
 	if q.onAck != nil {
@@ -106,6 +118,118 @@ func (q *WorkerQueue) Ack(ids []uint64) {
 
 func (q *WorkerQueue) Length() int     { q.mu.Lock(); defer q.mu.Unlock(); return len(q.items) }
 func (q *WorkerQueue) Dropped() uint64 { return q.dropped.Load() }
+
+func (q *WorkerQueue) SetMaster(url, token string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.masterURL = strings.TrimRight(url, "/")
+	q.clusterToken = token
+}
+
+func (q *WorkerQueue) Flush(ctx context.Context) error {
+	batch := q.Batch(64)
+	if len(batch.Items) == 0 {
+		return nil
+	}
+	q.mu.Lock()
+	url := q.masterURL
+	token := q.clusterToken
+	q.mu.Unlock()
+	if url == "" || token == "" {
+		return nil
+	}
+	body, err := json.Marshal(batch)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url+FlushPath, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("master flush returned %d", resp.StatusCode)
+	}
+	var ack Ack
+	if err := json.NewDecoder(resp.Body).Decode(&ack); err != nil {
+		return err
+	}
+	q.Ack(ack.IDs)
+	log.Info().Str("worker_id", q.workerID).Int("flushed", len(ack.IDs)).Int("queued", q.Length()).Msg("Worker flushed batch to master")
+	return nil
+}
+
+func (q *WorkerQueue) StartFlushLoop(ctx context.Context, interval time.Duration, threshold int) {
+	q.flushCtx, q.stopFlush = context.WithCancel(ctx)
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-q.flushCtx.Done():
+				return
+			case <-ticker.C:
+			}
+			if q.Length() == 0 || q.flushing.Load() {
+				continue
+			}
+			q.flushing.Store(true)
+			_ = q.Flush(q.flushCtx)
+			q.flushing.Store(false)
+		}
+	}()
+}
+
+func (q *WorkerQueue) StopFlushLoop() {
+	if q.stopFlush != nil {
+		q.stopFlush()
+	}
+}
+
+func (q *WorkerQueue) cacheFilePath() string {
+	return q.cachePath + "/worker-queue.json"
+}
+
+func (q *WorkerQueue) saveToCache() {
+	if q.cachePath == "" {
+		return
+	}
+	if err := os.MkdirAll(q.cachePath, 0700); err != nil {
+		return
+	}
+	data, err := json.MarshalIndent(q.items, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(q.cacheFilePath(), data, 0600)
+}
+
+func (q *WorkerQueue) loadFromCache() {
+	if q.cachePath == "" {
+		return
+	}
+	data, err := os.ReadFile(q.cacheFilePath())
+	if err != nil {
+		return
+	}
+	if err := json.Unmarshal(data, &q.items); err != nil {
+		return
+	}
+	for _, item := range q.items {
+		if item.ID > q.nextID {
+			q.nextID = item.ID
+		}
+	}
+	if len(q.items) > 0 {
+		log.Info().Str("worker_id", q.workerID).Int("restored", len(q.items)).Msg("Restored worker queue from cache")
+	}
+}
 
 func (q *WorkerQueue) Handler(token string, maxBatch int) http.Handler {
 	if maxBatch < 1 || maxBatch > 64 {
@@ -163,6 +287,35 @@ type WorkerStatus struct {
 	LastSuccess time.Time `json:"last_success"`
 	LastAttempt time.Time `json:"last_attempt"`
 	LastError   string    `json:"last_error"`
+}
+
+func NewMasterFlushHandler(token string, ingest func(dhtcclient.Metadata) bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if token == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var batch Batch
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&batch); err != nil {
+			http.Error(w, "invalid batch", http.StatusBadRequest)
+			return
+		}
+		ids := make([]uint64, 0, len(batch.Items))
+		for _, item := range batch.Items {
+			if len(item.Metadata.InfoHash) == 20 || len(item.Metadata.InfoHash) == 32 {
+				ingest(item.Metadata)
+			}
+			ids = append(ids, item.ID)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(Ack{IDs: ids})
+		log.Info().Str("worker_id", batch.WorkerID).Int("items", len(ids)).Msg("Master received worker push")
+	})
 }
 
 func NewMasterPuller(workerURLs []string, token string, ingest func(dhtcclient.Metadata) bool) (*MasterPuller, error) {

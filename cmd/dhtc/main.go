@@ -129,7 +129,13 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 	if strings.TrimSpace(cfg.ClusterToken) == "" {
 		log.Fatal().Msg("cluster token is required in worker mode")
 	}
-	queue := cluster.NewWorkerQueue(cfg.WorkerID, cfg.WorkerQueue, func(md dhtcclient.Metadata) {
+	cacheDir := cfg.WorkerCacheDir
+	if cacheDir == "" {
+		cacheDir = strings.ReplaceAll(cfg.Address, ":", "_")
+		cacheDir = strings.ReplaceAll(cacheDir, "/", "_")
+		cacheDir = "/tmp/dhtc-worker-" + cacheDir
+	}
+	queue := cluster.NewWorkerQueue(cfg.WorkerID, cfg.WorkerQueue, cacheDir, func(md dhtcclient.Metadata) {
 		cache.InfoHashCacheExpireAfter(string(md.InfoHash), 12*time.Hour)
 	})
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -137,6 +143,11 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 	crawler := ui.NewWorkerCrawlerManager(cfg, bootstrapNodes, queue.Enqueue)
 	if !cfg.CrawlerScheduleEnabled {
 		crawler.Start()
+	}
+	if cfg.MasterURL != "" {
+		queue.SetMaster(cfg.MasterURL, cfg.ClusterToken)
+		queue.StartFlushLoop(ctx, 5*time.Minute, cfg.WorkerQueue)
+		log.Info().Str("master", cfg.MasterURL).Msg("Worker push mode enabled")
 	}
 
 	mux := http.NewServeMux()
@@ -155,6 +166,7 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 	log.Info().Str("worker_id", cfg.WorkerID).Str("listen", cfg.Address).Int("queue", cfg.WorkerQueue).Int("batch", cfg.WorkerBatch).Msg("Worker started")
 	<-ctx.Done()
 	crawler.Stop()
+	queue.StopFlushLoop()
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	_ = server.Shutdown(shutdownCtx)
