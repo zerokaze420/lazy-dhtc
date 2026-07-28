@@ -48,6 +48,26 @@ func NewManager(endpoints []ListenEndpoint, interval time.Duration, maxNeighbors
 		})
 		manager.indexingServices = append(manager.indexingServices, service)
 	}
+	var ipv6Service *IndexingService
+	for _, service := range manager.indexingServices {
+		candidate := service.(*IndexingService)
+		if candidate.network == "udp6" {
+			ipv6Service = candidate
+		}
+	}
+	if ipv6Service != nil {
+		for _, service := range manager.indexingServices {
+			candidate := service.(*IndexingService)
+			if candidate.network != "udp4" {
+				continue
+			}
+			candidate.want = []string{"n4", "n6"}
+			candidate.eventHandlers.OnBootstrapCandidate = func(addr netip.AddrPort) {
+				log.Info().Stringer("address", addr).Msg("Discovered IPv6 DHT bootstrap candidate through BEP 32")
+				ipv6Service.probeBootstrapCandidate(addr)
+			}
+		}
+	}
 	for i, service := range manager.indexingServices {
 		service.Start(manager.ctx, endpoints[i].Bootstrap)
 		log.Info().Str("network", endpoints[i].Network).Bool("enabled", true).Int("bootstrap", len(endpoints[i].Bootstrap)).Int("routing_table", service.routingTableSize()).Msg("DHT network started")

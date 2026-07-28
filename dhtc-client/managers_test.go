@@ -7,18 +7,23 @@ import (
 	"time"
 )
 
-func TestDualStackNetworksRequestOnlyTheirOwnAddressFamily(t *testing.T) {
+func TestDualStackIPv4NetworkRequestsBEP32Candidates(t *testing.T) {
 	manager := NewManager([]ListenEndpoint{
 		{Network: "udp4", Address: "127.0.0.1:0"},
 		{Network: "udp6", Address: "[::1]:0"},
 	}, time.Hour, 10, 0)
 	defer manager.Terminate()
 
-	wants := [][]string{{"n4"}, {"n6"}}
+	wants := [][]string{{"n4", "n6"}, {"n6"}}
 	for i, expected := range wants {
 		service := manager.indexingServices[i].(*IndexingService)
-		if len(service.want) != 1 || service.want[0] != expected[0] {
+		if len(service.want) != len(expected) {
 			t.Fatalf("service %d want list = %#v, want %#v", i, service.want, expected)
+		}
+		for j := range expected {
+			if service.want[j] != expected[j] {
+				t.Fatalf("service %d want list = %#v, want %#v", i, service.want, expected)
+			}
 		}
 	}
 }

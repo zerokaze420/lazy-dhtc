@@ -31,3 +31,9 @@ func TestParseArgumentsLoadsDualStackYAML(t *testing.T) {
 		t.Fatalf("IPv6 YAML configuration not loaded: %#v", cfg)
 	}
 }
+
+func TestNormalizeLegacyIPv6ModeToDual(t *testing.T) {
+	if got := NormalizeNetworkMode("ipv6"); got != NetworkModeDual {
+		t.Fatalf("legacy ipv6 mode = %q, want dual", got)
+	}
+}

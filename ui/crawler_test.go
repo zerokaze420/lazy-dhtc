@@ -11,7 +11,7 @@ func TestCrawlerEndpoints(t *testing.T) {
 		networks []string
 	}{
 		{mode: "ipv4", networks: []string{"udp4"}},
-		{mode: "ipv6", networks: []string{"udp6"}},
+		{mode: "ipv6", networks: []string{"udp4", "udp6"}},
 		{mode: "dual", networks: []string{"udp4", "udp6"}},
 		{mode: "invalid", networks: []string{"udp4"}},
 	}
@@ -51,7 +51,7 @@ func TestCrawlerEndpointsIncludeConfiguredIPv6BootstrapNodes(t *testing.T) {
 		BootstrapNodesIPv6: "[2001:db8::1]:6881\nseed.example:6881, [2001:db8::1]:6881",
 	}
 	endpoints := crawlerEndpoints(configuration, nil, nil)
-	if len(endpoints) != 1 || len(endpoints[0].Bootstrap) != 2 {
+	if len(endpoints) != 2 || len(endpoints[1].Bootstrap) != 2 {
 		t.Fatalf("IPv6 bootstrap nodes = %#v, want two unique nodes", endpoints)
 	}
 }

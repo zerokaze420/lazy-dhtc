@@ -11,7 +11,6 @@ import (
 
 const (
 	NetworkModeIPv4 = "ipv4"
-	NetworkModeIPv6 = "ipv6"
 	NetworkModeDual = "dual"
 )
 
@@ -150,7 +149,7 @@ func ParseArguments() *Configuration {
 	flag.BoolVar(&config.CrawlerStartOnLaunch, "CrawlerStartOnLaunch", false, "start crawler automatically when the app launches")
 	flag.IntVar(&config.MaxSavedTorrents, "MaxSavedTorrents", 20000, "maximum saved torrents before pruning oldest entries (0 disables pruning)")
 	flag.StringVar(&config.ConfigFile, "config", configFile, "optional YAML configuration file")
-	flag.StringVar(&config.NetworkMode, "NetworkMode", defaultString(config.NetworkMode, "dual"), "DHT network mode (ipv4, ipv6, dual)")
+	flag.StringVar(&config.NetworkMode, "NetworkMode", defaultString(config.NetworkMode, "dual"), "DHT network mode (ipv4, dual)")
 	flag.StringVar(&config.IPv6BootstrapNodeFile, "IPv6BootstrapNodeFile", "ipv6-bootstrap-nodes.txt", "legacy supplemental IPv6 bootstrap node file")
 	flag.StringVar(&config.ListenIPv4, "ListenIPv4", defaultString(config.ListenIPv4, "0.0.0.0:0"), "IPv4 DHT listen address")
 	flag.StringVar(&config.ListenIPv6, "ListenIPv6", defaultString(config.ListenIPv6, "[::]:0"), "IPv6 DHT listen address")
@@ -208,9 +207,9 @@ func argumentValue(name string) string {
 
 func NormalizeNetworkMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case NetworkModeIPv6:
-		return NetworkModeIPv6
 	case NetworkModeDual:
+		return NetworkModeDual
+	case "ipv6":
 		return NetworkModeDual
 	default:
 		return NetworkModeIPv4

@@ -40,7 +40,8 @@ type IndexingService struct {
 }
 
 type IndexingServiceEventHandlers struct {
-	OnResult func(IndexingResult)
+	OnResult             func(IndexingResult)
+	OnBootstrapCandidate func(netip.AddrPort)
 }
 
 type IndexingResult struct {
@@ -354,7 +355,7 @@ func (is *IndexingService) onFindNodeResponse(response *Message, addr netip.Addr
 		is.addNode(node.ID, node.Addr)
 	}
 	for _, node := range response.R.Nodes6 {
-		is.addNode(node.ID, node.Addr)
+		is.handleDiscoveredNode(node)
 	}
 }
 
@@ -424,8 +425,29 @@ func (is *IndexingService) onSampleInfohashesResponse(msg *Message, addr netip.A
 	}
 
 	for _, node := range msg.R.Nodes6 {
-		is.addNode(node.ID, node.Addr)
+		is.handleDiscoveredNode(node)
 	}
+}
+
+func (is *IndexingService) handleDiscoveredNode(node CompactNodeInfo) {
+	if is.acceptsAddress(node.Addr) {
+		is.addNode(node.ID, node.Addr)
+		return
+	}
+	if is.network == "udp4" && node.Addr.Addr().Is6() && is.eventHandlers.OnBootstrapCandidate != nil {
+		is.eventHandlers.OnBootstrapCandidate(node.Addr)
+	}
+}
+
+func (is *IndexingService) probeBootstrapCandidate(addr netip.AddrPort) {
+	if !is.acceptsAddress(addr) || is.stopped() {
+		return
+	}
+	target := make([]byte, 20)
+	if _, err := rand.Read(target); err != nil {
+		return
+	}
+	is.protocol.SendMessage(NewFindNodeQuery(is.nodeID, target, is.want), addr)
 }
 
 func (is *IndexingService) requestPeers(infoHash []byte, addr netip.AddrPort) {

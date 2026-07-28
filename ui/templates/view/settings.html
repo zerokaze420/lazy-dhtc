@@ -330,14 +330,6 @@
                   class="join-item btn flex-1"
                   type="radio"
                   name="NetworkMode"
-                  value="ipv6"
-                  aria-label="{{ t .lang "network_mode_ipv6" }}"
-                  {{ if eq .config.NetworkMode "ipv6" }}checked{{ end }}
-                />
-                <input
-                  class="join-item btn flex-1"
-                  type="radio"
-                  name="NetworkMode"
                   value="dual"
                   aria-label="{{ t .lang "network_mode_dual" }}"
                   {{ if eq .config.NetworkMode "dual" }}checked{{ end }}

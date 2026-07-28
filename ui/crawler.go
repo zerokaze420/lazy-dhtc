@@ -135,7 +135,7 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
 	_ = threads
 	mode := config.NormalizeNetworkMode(m.configuration.NetworkMode)
 	log.Info().Str("mode", mode).Msg("Network Mode")
-	log.Info().Bool("enabled", mode != config.NetworkModeIPv6).Msg("IPv4 DHT")
+	log.Info().Bool("enabled", true).Msg("IPv4 DHT")
 	log.Info().Bool("enabled", mode != config.NetworkModeIPv4).Msg("IPv6 DHT")
 
 	trawlingManager := dhtcclient.NewManager(endpoints, 10*time.Second, m.configuration.MaxNeighbors, m.configuration.RateLimit)
@@ -172,8 +172,6 @@ func crawlerEndpoints(configuration *config.Configuration, bootstrap4, bootstrap
 	bootstrap6 = uniqueStrings(bootstrap6)
 	endpoints := make([]dhtcclient.ListenEndpoint, 0, 2)
 	switch config.NormalizeNetworkMode(configuration.NetworkMode) {
-	case config.NetworkModeIPv6:
-		endpoints = append(endpoints, dhtcclient.ListenEndpoint{Network: "udp6", Address: configuration.ListenIPv6, CachePath: configuration.RoutingTableCacheIPv6, Bootstrap: bootstrap6})
 	case config.NetworkModeDual:
 		endpoints = append(endpoints,
 			dhtcclient.ListenEndpoint{Network: "udp4", Address: configuration.ListenIPv4, CachePath: configuration.RoutingTableCacheIPv4, Bootstrap: bootstrap4},

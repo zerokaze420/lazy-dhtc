@@ -245,7 +245,6 @@ var translations = map[string]map[string]string{
 		"network_mode_dual":         "IPv4 + IPv6 双栈",
 		"network_mode_hint":         "选择 DHT 爬虫使用的 IP 地址族。修改后请停止并重新启动爬虫。",
 		"network_mode_ipv4":         "仅 IPv4",
-		"network_mode_ipv6":         "仅 IPv6",
 		"name_blacklist_file":       "名称黑名单文件",
 		"notifications":             "通知",
 		"password":                  "密码",
