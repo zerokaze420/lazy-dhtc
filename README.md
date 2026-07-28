@@ -150,8 +150,6 @@ go run ./cmd/dhtc
 | `-NetworkMode` | `dual` | DHT 网络模式：`ipv4` 或 `dual` |
 | `-ListenIPv4` | `0.0.0.0:0` | IPv4 DHT UDP 监听地址 |
 | `-ListenIPv6` | `[::]:0` | IPv6 DHT UDP 监听地址 |
-| `-BootstrapNodeFileIPv6` | `bootstrap-nodes6.txt` | IPv6 DHT Bootstrap 节点文件 |
-| `-BootstrapNodesIPv6` | 空 | 逗号、空格或换行分隔的 IPv6 Bootstrap 节点 |
 | `-RoutingTableCacheIPv4` | `routing-table-v4.json` | IPv4 路由表缓存 |
 | `-RoutingTableCacheIPv6` | `routing-table-v6.json` | IPv6 路由表缓存 |
 | `-config` | 空 | 可选的双栈 YAML 配置文件 |
@@ -172,9 +170,7 @@ go run ./cmd/dhtc -help
 
 IPv6 模式要求宿主机或容器具有可用的 IPv6 网络。按照 BEP 5 与 BEP 32，IPv4 DHT 和 IPv6 DHT 是完全独立的 Overlay：各自拥有 UDP Socket、节点 ID、KBucket 路由表、查询、Token、Bootstrap、刷新任务与持久化缓存。双栈模式会在 IPv4 查询中请求 `nodes6`，但这些地址只作为 IPv6 UDP 探测候选；只有通过 IPv6 Socket 正常响应的节点才会进入 IPv6 路由表，两套路由表不会共享或直接注入节点。
 
-常用 Mainline DHT Bootstrap 域名通常没有 AAAA 记录，因此首次运行 IPv6-only 模式时，应在 `bootstrap-nodes6.txt` 或 YAML 的 `bootstrap.ipv6` 中提供可用的 IPv6 Mainline DHT 节点。支持 AAAA 域名和 `[IPv6]:端口` 格式。Bootstrap 失败不会阻止程序运行；程序会先恢复 IPv6 路由表缓存，仅在缓存节点不足时继续尝试 Bootstrap。
-
-默认 `dual` 模式会通过 BEP 32 自动从内置 IPv4 Bootstrap 网络发现 IPv6 候选，无需用户填写。设置页面的“IPv6 Bootstrap 节点”仅作为可选补充。项目不再提供纯 `ipv6` 模式；旧配置中的 `ipv6` 会自动迁移为 `dual`。
+默认 `dual` 模式会通过 BEP 32 自动从内置 IPv4 Bootstrap 网络发现 IPv6 候选，再由独立 UDP6 Network 验证并加入 IPv6 路由表。整个过程由程序自动处理，不提供也不需要用户配置 IPv6 Bootstrap。项目不再提供纯 `ipv6` 模式；旧配置中的 `ipv6` 会自动迁移为 `dual`。
 
 可选 YAML 配置示例：
 
@@ -187,8 +183,6 @@ listen:
 bootstrap:
   ipv4:
     - "router.bittorrent.com:6881"
-  ipv6:
-    - "[2001:db8::1]:6881"
 routing_cache:
   ipv4: "routing-table-v4.json"
   ipv6: "routing-table-v6.json"

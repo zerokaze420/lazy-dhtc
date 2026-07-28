@@ -21,6 +21,6 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates wget \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=go-builder /out/dhtc /usr/local/bin/dhtc
-COPY bootstrap-nodes.txt bootstrap-nodes6.txt name-blacklist.txt file-blacklist.txt /usr/local/share/dhtc/
+COPY bootstrap-nodes.txt name-blacklist.txt file-blacklist.txt /usr/local/share/dhtc/
 EXPOSE 4200
-CMD ["dhtc", "-address", "0.0.0.0:4200", "-database", "/lzcapp/var/dhtcdb", "-BootstrapNodeFile", "/usr/local/share/dhtc/bootstrap-nodes.txt", "-BootstrapNodeFileIPv6", "/usr/local/share/dhtc/bootstrap-nodes6.txt", "-IPv6BootstrapNodeFile", "/lzcapp/var/ipv6-bootstrap-nodes.txt", "-RoutingTableCacheIPv4", "/lzcapp/var/routing-table-v4.json", "-RoutingTableCacheIPv6", "/lzcapp/var/routing-table-v6.json"]
+CMD ["dhtc", "-address", "0.0.0.0:4200", "-database", "/lzcapp/var/dhtcdb", "-BootstrapNodeFile", "/usr/local/share/dhtc/bootstrap-nodes.txt", "-RoutingTableCacheIPv4", "/lzcapp/var/routing-table-v4.json", "-RoutingTableCacheIPv6", "/lzcapp/var/routing-table-v6.json"]

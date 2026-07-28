@@ -1,2 +1,0 @@
-# Add IPv6 Mainline DHT bootstrap nodes as [address]:port or AAAA-enabled host:port.
-# Learned nodes are restored automatically from the IPv6 routing table cache.

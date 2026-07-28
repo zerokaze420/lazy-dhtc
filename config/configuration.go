@@ -45,14 +45,11 @@ type Configuration struct {
 	CrawlerScheduleEnd     string `form:"CrawlerScheduleEnd"`
 	MaxSavedTorrents       int    `form:"MaxSavedTorrents"`
 	NetworkMode            string `form:"NetworkMode"`
-	IPv6BootstrapNodeFile  string `form:"IPv6BootstrapNodeFile"`
 	ListenIPv4             string `form:"ListenIPv4"`
 	ListenIPv6             string `form:"ListenIPv6"`
 	RoutingTableCacheIPv4  string `form:"RoutingTableCacheIPv4"`
 	RoutingTableCacheIPv6  string `form:"RoutingTableCacheIPv6"`
 	BootstrapIPv4          []string
-	BootstrapIPv6          []string
-	BootstrapNodesIPv6     string `form:"BootstrapNodesIPv6"`
 	ConfigFile             string
 
 	EnableBlacklist    bool   `form:"EnableBlacklist"`
@@ -62,8 +59,7 @@ type Configuration struct {
 
 	Statistics bool `form:"Statistics"`
 
-	BootstrapNodeFile     string `form:"BootstrapNodeFile"`
-	BootstrapNodeFileIPv6 string `form:"BootstrapNodeFileIPv6"`
+	BootstrapNodeFile string `form:"BootstrapNodeFile"`
 
 	OnlyWebServer bool
 	AuthUser      string
@@ -101,7 +97,6 @@ func ParseArguments() *Configuration {
 				} `yaml:"listen"`
 				Bootstrap struct {
 					IPv4 []string `yaml:"ipv4"`
-					IPv6 []string `yaml:"ipv6"`
 				} `yaml:"bootstrap"`
 				RoutingCache struct {
 					IPv4 string `yaml:"ipv4"`
@@ -120,7 +115,6 @@ func ParseArguments() *Configuration {
 				config.ListenIPv4 = fileConfig.Listen.IPv4
 				config.ListenIPv6 = fileConfig.Listen.IPv6
 				config.BootstrapIPv4 = fileConfig.Bootstrap.IPv4
-				config.BootstrapIPv6 = fileConfig.Bootstrap.IPv6
 				config.RoutingTableCacheIPv4 = fileConfig.RoutingCache.IPv4
 				config.RoutingTableCacheIPv6 = fileConfig.RoutingCache.IPv6
 				config.CrawlerScheduleEnabled = fileConfig.Crawler.Schedule.Enabled
@@ -166,7 +160,6 @@ func ParseArguments() *Configuration {
 	flag.IntVar(&config.MaxSavedTorrents, "MaxSavedTorrents", 20000, "maximum saved torrents before pruning oldest entries (0 disables pruning)")
 	flag.StringVar(&config.ConfigFile, "config", configFile, "optional YAML configuration file")
 	flag.StringVar(&config.NetworkMode, "NetworkMode", defaultString(config.NetworkMode, "dual"), "DHT network mode (ipv4, dual)")
-	flag.StringVar(&config.IPv6BootstrapNodeFile, "IPv6BootstrapNodeFile", "ipv6-bootstrap-nodes.txt", "legacy supplemental IPv6 bootstrap node file")
 	flag.StringVar(&config.ListenIPv4, "ListenIPv4", defaultString(config.ListenIPv4, "0.0.0.0:0"), "IPv4 DHT listen address")
 	flag.StringVar(&config.ListenIPv6, "ListenIPv6", defaultString(config.ListenIPv6, "[::]:0"), "IPv6 DHT listen address")
 	flag.StringVar(&config.RoutingTableCacheIPv4, "RoutingTableCacheIPv4", defaultString(config.RoutingTableCacheIPv4, "routing-table-v4.json"), "IPv4 routing table cache")
@@ -180,8 +173,6 @@ func ParseArguments() *Configuration {
 	flag.BoolVar(&config.Statistics, "Statistics", false, "enable Statistics (dashboard)")
 
 	flag.StringVar(&config.BootstrapNodeFile, "BootstrapNodeFile", "bootstrap-nodes.txt", "bootstrap nodes to use")
-	flag.StringVar(&config.BootstrapNodeFileIPv6, "BootstrapNodeFileIPv6", "bootstrap-nodes6.txt", "IPv6 bootstrap nodes to use")
-	flag.StringVar(&config.BootstrapNodesIPv6, "BootstrapNodesIPv6", "", "IPv6 bootstrap nodes separated by commas or whitespace")
 
 	flag.BoolVar(&config.OnlyWebServer, "OnlyWebServer", false, "only start the web-server")
 	flag.StringVar(&config.AuthUser, "auth-user", "", "username for basic auth")

@@ -9,7 +9,7 @@ import (
 
 func TestParseArgumentsLoadsDualStackYAML(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dhtc.yml")
-	data := []byte("network:\n  mode: ipv6\nlisten:\n  ipv4: 127.0.0.1:6881\n  ipv6: '[::1]:6881'\nbootstrap:\n  ipv6:\n    - '[2001:db8::1]:6881'\nrouting_cache:\n  ipv6: /tmp/routing-v6.json\n")
+	data := []byte("network:\n  mode: ipv6\nlisten:\n  ipv4: 127.0.0.1:6881\n  ipv6: '[::1]:6881'\nrouting_cache:\n  ipv6: /tmp/routing-v6.json\n")
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestParseArgumentsLoadsDualStackYAML(t *testing.T) {
 	if cfg.NetworkMode != NetworkModeDual {
 		t.Fatalf("network mode = %q, want dual", cfg.NetworkMode)
 	}
-	if cfg.ListenIPv6 != "[::1]:6881" || len(cfg.BootstrapIPv6) != 1 {
+	if cfg.ListenIPv6 != "[::1]:6881" || cfg.RoutingTableCacheIPv6 != "/tmp/routing-v6.json" {
 		t.Fatalf("IPv6 YAML configuration not loaded: %#v", cfg)
 	}
 }

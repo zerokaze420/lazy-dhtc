@@ -33,7 +33,6 @@ type CrawlerManager struct {
 	notifier        *notifier.Manager
 	hub             *Hub
 	bootstrapNodes4 []string
-	bootstrapNodes6 []string
 	stop            chan struct{}
 	startedAt       time.Time
 	autoStopAt      time.Time
@@ -41,14 +40,13 @@ type CrawlerManager struct {
 	running         bool
 }
 
-func NewCrawlerManager(configuration *config.Configuration, bootstrapNodes4, bootstrapNodes6 []string, database db.Repository, nManager *notifier.Manager, hub *Hub) *CrawlerManager {
+func NewCrawlerManager(configuration *config.Configuration, bootstrapNodes4 []string, database db.Repository, nManager *notifier.Manager, hub *Hub) *CrawlerManager {
 	manager := &CrawlerManager{
 		configuration:   configuration,
 		database:        database,
 		notifier:        nManager,
 		hub:             hub,
 		bootstrapNodes4: bootstrapNodes4,
-		bootstrapNodes6: bootstrapNodes6,
 	}
 	go manager.scheduleLoop()
 	return manager
@@ -196,7 +194,7 @@ func (m *CrawlerManager) stopLocked() bool {
 }
 
 func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
-	endpoints := crawlerEndpoints(m.configuration, m.bootstrapNodes4, m.bootstrapNodes6)
+	endpoints := crawlerEndpoints(m.configuration, m.bootstrapNodes4)
 	_ = threads
 	mode := config.NormalizeNetworkMode(m.configuration.NetworkMode)
 	log.Info().Str("mode", mode).Msg("Network Mode")
@@ -230,37 +228,16 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
 	}
 }
 
-func crawlerEndpoints(configuration *config.Configuration, bootstrap4, bootstrap6 []string) []dhtcclient.ListenEndpoint {
-	bootstrap6 = append(append([]string(nil), bootstrap6...), strings.FieldsFunc(configuration.BootstrapNodesIPv6, func(r rune) bool {
-		return r == ',' || r == ';' || r == '\n' || r == '\r' || r == '\t' || r == ' '
-	})...)
-	bootstrap6 = uniqueStrings(bootstrap6)
+func crawlerEndpoints(configuration *config.Configuration, bootstrap4 []string) []dhtcclient.ListenEndpoint {
 	endpoints := make([]dhtcclient.ListenEndpoint, 0, 2)
 	switch config.NormalizeNetworkMode(configuration.NetworkMode) {
 	case config.NetworkModeDual:
 		endpoints = append(endpoints,
 			dhtcclient.ListenEndpoint{Network: "udp4", Address: configuration.ListenIPv4, CachePath: configuration.RoutingTableCacheIPv4, Bootstrap: bootstrap4},
-			dhtcclient.ListenEndpoint{Network: "udp6", Address: configuration.ListenIPv6, CachePath: configuration.RoutingTableCacheIPv6, Bootstrap: bootstrap6},
+			dhtcclient.ListenEndpoint{Network: "udp6", Address: configuration.ListenIPv6, CachePath: configuration.RoutingTableCacheIPv6},
 		)
 	default:
 		endpoints = append(endpoints, dhtcclient.ListenEndpoint{Network: "udp4", Address: configuration.ListenIPv4, CachePath: configuration.RoutingTableCacheIPv4, Bootstrap: bootstrap4})
 	}
 	return endpoints
-}
-
-func uniqueStrings(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, exists := seen[value]; exists {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	return result
 }

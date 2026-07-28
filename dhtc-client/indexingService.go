@@ -199,7 +199,11 @@ func (is *IndexingService) runMaintenance(nodes []string) {
 	routingTableLen := is.routingTable.Len()
 	if routingTableLen < 8 {
 		if len(nodes) == 0 {
-			log.Warn().Str("network", is.network).Int("routing_table", routingTableLen).Msg("DHT cannot bootstrap: no bootstrap nodes configured")
+			if is.network == "udp6" {
+				log.Debug().Int("routing_table", routingTableLen).Msg("IPv6 DHT is waiting for automatic BEP 32 candidates")
+			} else {
+				log.Warn().Str("network", is.network).Int("routing_table", routingTableLen).Msg("DHT cannot bootstrap: no bootstrap nodes configured")
+			}
 		} else {
 			is.bootstrap(nodes)
 		}

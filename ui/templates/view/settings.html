@@ -129,8 +129,6 @@
     </div>
 
     <form action="/settings" method="POST" class="contents">
-      <input type="hidden" name="IPv6BootstrapNodeFile" value="{{ .config.IPv6BootstrapNodeFile }}" />
-      <input type="hidden" name="BootstrapNodeFileIPv6" value="{{ .config.BootstrapNodeFileIPv6 }}" />
       <input type="hidden" name="ListenIPv4" value="{{ .config.ListenIPv4 }}" />
       <input type="hidden" name="ListenIPv6" value="{{ .config.ListenIPv6 }}" />
       <input type="hidden" name="RoutingTableCacheIPv4" value="{{ .config.RoutingTableCacheIPv4 }}" />
@@ -337,18 +335,6 @@
               </div>
               <p class="text-sm text-base-content/60 mt-2">{{ t .lang "network_mode_hint" }}</p>
             </fieldset>
-            <div class="form-control sm:col-span-2">
-              <label class="label" for="BootstrapNodesIPv6">
-                <span class="label-text font-semibold">IPv6 Bootstrap 节点</span>
-              </label>
-              <textarea
-                id="BootstrapNodesIPv6"
-                name="BootstrapNodesIPv6"
-                rows="3"
-                placeholder="[2001:db8::1]:6881"
-                class="textarea textarea-bordered w-full font-mono"
-              >{{ .config.BootstrapNodesIPv6 }}</textarea>
-            </div>
             <div class="form-control w-full">
               <label class="label" for="CrawlerThreads">
                 <span class="label-text font-semibold">{{ t .lang "crawler_threads" }}</span>
