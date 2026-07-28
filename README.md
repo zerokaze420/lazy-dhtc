@@ -259,6 +259,47 @@ Worker 不需要数据库、配置文件、Bootstrap 文件或 Web 静态资源�
 
 名称包含 `dhtc-worker` 的发布二进制默认自动进入 `worker` 角色，不启动 GUI，也不需要传入 `-node-role worker`。它只提供 `/health` 和带 Token 鉴权的 `/api/worker/v1/queue`。
 
+### VPS 一键安装 Worker
+
+Debian、Ubuntu、Rocky Linux、AlmaLinux 等使用 systemd 的 VPS 可以直接执行：
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/zerokaze420/lazy-dhtc/master/scripts/install-worker.sh -o install-worker.sh
+chmod +x install-worker.sh
+sudo ./install-worker.sh --token '替换为长随机密钥' --worker-id 'tokyo-vps-01'
+```
+
+脚本会自动识别 `amd64/arm64`，下载最新 GitHub Release，校验 SHA256，创建低权限用户、路由表数据目录、Token 环境文件和 systemd 服务，并立即启动。查看全部参数：
+
+```shell
+./install-worker.sh --help
+```
+
+常用低配参数示例：
+
+```shell
+sudo ./install-worker.sh \
+  --token '与 Master 相同的密钥' \
+  --worker-id 'tokyo-vps-01' \
+  --address '0.0.0.0:4200' \
+  --queue 128 \
+  --batch 8 \
+  --max-downloads 1 \
+  --max-leeches 16 \
+  --rate-limit 50
+```
+
+安装完成后的管理命令：
+
+```shell
+systemctl status dhtc-worker
+journalctl -u dhtc-worker -f
+systemctl restart dhtc-worker
+curl http://127.0.0.1:4200/health
+```
+
+重新运行安装脚本即可升级二进制并重建服务配置。公网防火墙应只允许 Master 的出口 IP 访问 Worker TCP `4200`；DHT 使用的 UDP 流量仍需允许出入站。
+
 ## MCP 接口
 
 MCP 端点位于：

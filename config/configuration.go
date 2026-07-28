@@ -143,8 +143,8 @@ func ParseArguments() *Configuration {
 
 	flag.StringVar(&config.NodeRole, "node-role", defaultRole, "node role (standalone, master, worker)")
 	flag.StringVar(&config.WorkerURLs, "worker-urls", "", "comma-separated public worker URLs for master polling")
-	flag.StringVar(&config.ClusterToken, "cluster-token", "", "shared token for worker authentication")
-	flag.StringVar(&config.WorkerID, "worker-id", "", "stable worker identifier")
+	flag.StringVar(&config.ClusterToken, "cluster-token", os.Getenv("DHTC_CLUSTER_TOKEN"), "shared token for worker authentication")
+	flag.StringVar(&config.WorkerID, "worker-id", os.Getenv("DHTC_WORKER_ID"), "stable worker identifier")
 	flag.IntVar(&config.WorkerQueue, "worker-queue", 256, "maximum metadata records buffered by a worker")
 	flag.IntVar(&config.WorkerBatch, "worker-batch", 16, "maximum metadata records per worker upload")
 

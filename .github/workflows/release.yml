@@ -44,6 +44,7 @@ jobs:
           go build -v -o dhtc-linux cmd/dhtc/main.go
           GOARCH=amd64 ./scripts/build-worker.sh dhtc-worker-linux-amd64
           GOARCH=arm64 ./scripts/build-worker.sh dhtc-worker-linux-arm64
+          cp scripts/install-worker.sh install-worker.sh
           sha256sum dhtc-linux dhtc-worker-linux-amd64 dhtc-worker-linux-arm64 > SHA256SUMS-linux.txt
 
       - name: Build macOS
@@ -60,4 +61,5 @@ jobs:
         with:
           files: |
             dhtc-*
+            install-worker.sh
             SHA256SUMS-*.txt
