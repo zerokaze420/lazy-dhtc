@@ -7,6 +7,7 @@
             </label>
             <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
                 <li><a href="/dashboard">{{ t .lang "dashboard" }}</a></li>
+                {{ if eq .config.NodeRole "master" }}<li><a href="/workers">{{ t .lang "workers" }}</a></li>{{ end }}
                 <li><a href="/search">{{ t .lang "search" }}</a></li>
                 <li><a href="/discover">{{ t .lang "discover" }}</a></li>
                 <li><a href="/watches">{{ t .lang "watches" }}</a></li>
@@ -20,6 +21,7 @@
     <div class="navbar-center hidden lg:flex">
         <ul class="menu menu-horizontal px-1 gap-1">
             <li><a href="/dashboard" class="{{ if eq .path "/dashboard" }}active{{ end }}">{{ t .lang "dashboard" }}</a></li>
+            {{ if eq .config.NodeRole "master" }}<li><a href="/workers" class="{{ if eq .path "/workers" }}active{{ end }}">{{ t .lang "workers" }}</a></li>{{ end }}
             <li><a href="/search" class="{{ if eq .path "/search" }}active{{ end }}">{{ t .lang "search" }}</a></li>
             <li><a href="/discover" class="{{ if eq .path "/discover" }}active{{ end }}">{{ t .lang "discover" }}</a></li>
             <li><a href="/watches" class="{{ if eq .path "/watches" }}active{{ end }}">{{ t .lang "watches" }}</a></li>

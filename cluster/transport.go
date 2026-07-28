@@ -26,6 +26,8 @@ type Record struct {
 type Batch struct {
 	WorkerID string   `json:"worker_id"`
 	Items    []Record `json:"items"`
+	Queued   int      `json:"queued"`
+	Dropped  uint64   `json:"dropped"`
 }
 
 type Ack struct {
@@ -71,7 +73,7 @@ func (q *WorkerQueue) Batch(limit int) Batch {
 		limit = len(q.items)
 	}
 	items := append([]Record(nil), q.items[:limit]...)
-	return Batch{WorkerID: q.workerID, Items: items}
+	return Batch{WorkerID: q.workerID, Items: items, Queued: len(q.items), Dropped: q.dropped.Load()}
 }
 
 func (q *WorkerQueue) Ack(ids []uint64) {
@@ -126,6 +128,20 @@ type MasterPuller struct {
 	token   string
 	client  *http.Client
 	ingest  func(dhtcclient.Metadata) bool
+	mu      sync.RWMutex
+	status  map[string]WorkerStatus
+}
+
+type WorkerStatus struct {
+	URL         string    `json:"url"`
+	WorkerID    string    `json:"worker_id"`
+	Online      bool      `json:"online"`
+	Queued      int       `json:"queued"`
+	Dropped     uint64    `json:"dropped"`
+	Pulled      uint64    `json:"pulled"`
+	LastSuccess time.Time `json:"last_success"`
+	LastAttempt time.Time `json:"last_attempt"`
+	LastError   string    `json:"last_error"`
 }
 
 func NewMasterPuller(workerURLs []string, token string, ingest func(dhtcclient.Metadata) bool) (*MasterPuller, error) {
@@ -139,7 +155,24 @@ func NewMasterPuller(workerURLs []string, token string, ingest func(dhtcclient.M
 			workers = append(workers, worker)
 		}
 	}
-	return &MasterPuller{workers: workers, token: token, client: &http.Client{Timeout: 15 * time.Second}, ingest: ingest}, nil
+	status := make(map[string]WorkerStatus, len(workers))
+	for _, worker := range workers {
+		status[worker] = WorkerStatus{URL: worker}
+	}
+	return &MasterPuller{workers: workers, token: token, client: &http.Client{Timeout: 15 * time.Second}, ingest: ingest, status: status}, nil
+}
+
+func (p *MasterPuller) Status() []WorkerStatus {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	result := make([]WorkerStatus, 0, len(p.workers))
+	now := time.Now()
+	for _, worker := range p.workers {
+		status := p.status[worker]
+		status.Online = !status.LastSuccess.IsZero() && now.Sub(status.LastSuccess) < 30*time.Second
+		result = append(result, status)
+	}
+	return result
 }
 
 func (p *MasterPuller) Run(ctx context.Context) {
@@ -159,9 +192,19 @@ func (p *MasterPuller) Run(ctx context.Context) {
 func (p *MasterPuller) pullAll(ctx context.Context) {
 	for _, worker := range p.workers {
 		if err := p.pull(ctx, worker); err != nil {
+			p.recordFailure(worker, err)
 			log.Warn().Err(err).Str("worker", worker).Msg("Could not pull worker metadata")
 		}
 	}
+}
+
+func (p *MasterPuller) recordFailure(worker string, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	status := p.status[worker]
+	status.LastAttempt = time.Now()
+	status.LastError = err.Error()
+	p.status[worker] = status
 }
 
 func (p *MasterPuller) pull(ctx context.Context, worker string) error {
@@ -180,6 +223,7 @@ func (p *MasterPuller) pull(ctx context.Context, worker string) error {
 		return err
 	}
 	if len(batch.Items) == 0 {
+		p.recordSuccess(worker, batch, 0)
 		return nil
 	}
 	ids := make([]uint64, 0, len(batch.Items))
@@ -203,5 +247,24 @@ func (p *MasterPuller) pull(ctx context.Context, worker string) error {
 		return fmt.Errorf("worker ack returned %d", ackResp.StatusCode)
 	}
 	log.Info().Str("worker_id", batch.WorkerID).Int("items", len(ids)).Msg("Master pulled worker metadata")
+	p.recordSuccess(worker, batch, len(ids))
 	return nil
+}
+
+func (p *MasterPuller) recordSuccess(worker string, batch Batch, pulled int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	status := p.status[worker]
+	status.WorkerID = batch.WorkerID
+	status.Queued = batch.Queued - pulled
+	if status.Queued < 0 {
+		status.Queued = 0
+	}
+	status.Dropped = batch.Dropped
+	status.Pulled += uint64(pulled)
+	status.LastAttempt = time.Now()
+	status.LastSuccess = status.LastAttempt
+	status.LastError = ""
+	status.Online = true
+	p.status[worker] = status
 }

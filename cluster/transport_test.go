@@ -48,6 +48,27 @@ func TestWorkerQueuePullAndAck(t *testing.T) {
 	if queue.Length() != 1 {
 		t.Fatalf("queue length = %d, want 1 after ack", queue.Length())
 	}
+	status := puller.Status()
+	if len(status) != 1 || !status[0].Online || status[0].Pulled != 1 || status[0].Queued != 1 {
+		t.Fatalf("worker status = %#v", status)
+	}
+}
+
+func TestMasterPullerReportsEmptyWorkerOnline(t *testing.T) {
+	queue := NewWorkerQueue("edge-empty", 2)
+	server := httptest.NewServer(queue.Handler("secret", 1))
+	defer server.Close()
+	puller, err := NewMasterPuller([]string{server.URL}, "secret", func(dhtcclient.Metadata) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := puller.pull(context.Background(), server.URL); err != nil {
+		t.Fatal(err)
+	}
+	status := puller.Status()[0]
+	if !status.Online || status.WorkerID != "edge-empty" || status.Queued != 0 {
+		t.Fatalf("empty worker status = %#v", status)
+	}
 }
 
 func TestWorkerQueueRequiresToken(t *testing.T) {

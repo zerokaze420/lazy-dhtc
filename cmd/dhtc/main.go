@@ -101,6 +101,7 @@ func main() {
 		}
 	}
 	crawler := ui.NewCrawlerManager(cfg, bootstrapNodes, database, nManager, hub)
+	var workerMonitor *cluster.MasterPuller
 	if cfg.NodeRole == "master" && strings.TrimSpace(cfg.WorkerURLs) != "" {
 		puller, err := cluster.NewMasterPuller(splitList(cfg.WorkerURLs), cfg.ClusterToken, func(md dhtcclient.Metadata) bool {
 			return ui.IngestMetadata(cfg, database, nManager, hub, md)
@@ -108,13 +109,14 @@ func main() {
 		if err != nil {
 			log.Fatal().Err(err).Msg("invalid master worker configuration")
 		}
+		workerMonitor = puller
 		go puller.Run(context.Background())
 	}
 	if !cfg.OnlyWebServer && cfg.CrawlerStartOnLaunch && !cfg.CrawlerScheduleEnabled {
 		crawler.Start()
 	}
 
-	ui.RunWebServer(cfg, database, hub, nManager, crawler)
+	ui.RunWebServer(cfg, database, hub, nManager, crawler, workerMonitor)
 }
 
 func runWorker(cfg *config.Configuration, bootstrapNodes []string) {

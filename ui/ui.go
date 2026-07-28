@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"dhtc/cluster"
 	"dhtc/config"
 	"dhtc/db"
 	"dhtc/notifier"
@@ -22,6 +23,7 @@ type Controller struct {
 	Hub           *Hub
 	Notifier      *notifier.Manager
 	Crawler       *CrawlerManager
+	WorkerMonitor *cluster.MasterPuller
 }
 
 func loadTemplates() multitemplate.Render {
@@ -65,7 +67,7 @@ func (c *Controller) getCommonH(ctx *gin.Context) gin.H {
 	}
 }
 
-func RunWebServer(configuration *config.Configuration, database db.Repository, hub *Hub, nManager *notifier.Manager, crawler *CrawlerManager) {
+func RunWebServer(configuration *config.Configuration, database db.Repository, hub *Hub, nManager *notifier.Manager, crawler *CrawlerManager, workerMonitor *cluster.MasterPuller) {
 	// gin.SetMode(gin.ReleaseMode)
 
 	srv := gin.Default()
@@ -90,10 +92,12 @@ func RunWebServer(configuration *config.Configuration, database db.Repository, h
 		Hub:           hub,
 		Notifier:      nManager,
 		Crawler:       crawler,
+		WorkerMonitor: workerMonitor,
 	}
 
 	srv.GET("", uiCtrl.Dashboard)
 	srv.GET("/dashboard", uiCtrl.Dashboard)
+	srv.GET("/workers", uiCtrl.Workers)
 	srv.GET("/search", uiCtrl.SearchGet)
 	srv.POST("/search", uiCtrl.SearchPost)
 	srv.GET("/discover", uiCtrl.DiscoverGet)
@@ -129,6 +133,7 @@ func RunWebServer(configuration *config.Configuration, database db.Repository, h
 		api.GET("/stats", uiCtrl.APIStats)
 		api.GET("/categories", uiCtrl.APICategories)
 		api.GET("/latest", uiCtrl.APILatest)
+		api.GET("/workers", uiCtrl.APIWorkers)
 	}
 
 	css, _ := fs.Sub(static, "static/css")

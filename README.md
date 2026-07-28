@@ -236,6 +236,8 @@ Worker 最低建议配置为 `1 vCPU、512 MB 内存、256 MB 可用磁盘`。�
 
 Master 每 5 秒主动拉取一次。Worker 只有在收到 Master 的确认后才删除记录；拉取或确认中断时，同一记录会再次出现，由 Master 的 InfoHash 唯一约束保证幂等。队列满后 Worker 拒绝新数据并记录丢弃数量，避免低配节点内存持续增长。Worker 健康接口 `/health` 会返回当前排队数和丢弃数。本阶段尚未实现磁盘队列，因此 Worker 重启会丢失尚未被 Master 确认的数据。
 
+Master GUI 的顶级导航包含 `/workers` 管理页面，与仪表盘同级。页面每 5 秒刷新，显示每个 Worker 的在线状态、Worker ID、公网 URL、待拉取数、累计拉取数、丢弃数、最后成功时间和最近错误。空队列但连接正常的 Worker 仍显示在线。
+
 ### Worker 单文件构建
 
 Worker 不需要数据库、配置文件、Bootstrap 文件或 Web 静态资源目录。构建静态 Linux 单文件：

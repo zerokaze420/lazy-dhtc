@@ -1,0 +1,77 @@
+{{ define "workers" }} {{ template "base" .}} {{ end }}
+{{ define "extra_js" }}{{ end }}
+{{ define "extra_css" }}{{ end }}
+{{ define "body" }}
+<div class="container mx-auto p-4 md:p-8">
+  <div class="mb-8">
+    <h1 class="text-4xl font-extrabold">{{ t .lang "workers" }}</h1>
+    <p class="text-base-content/60">{{ t .lang "workers_subtitle" }}</p>
+  </div>
+
+  {{ if not .isMaster }}
+  <div class="alert alert-info">{{ t .lang "workers_master_only" }}</div>
+  {{ else }}
+  <div id="worker-summary" class="stats stats-vertical sm:stats-horizontal shadow bg-base-100 mb-8">
+    <div class="stat"><div class="stat-title">{{ t .lang "workers_total" }}</div><div id="workers-total" class="stat-value text-primary">0</div></div>
+    <div class="stat"><div class="stat-title">{{ t .lang "workers_online" }}</div><div id="workers-online" class="stat-value text-success">0</div></div>
+    <div class="stat"><div class="stat-title">{{ t .lang "workers_queued" }}</div><div id="workers-queued" class="stat-value text-warning">0</div></div>
+    <div class="stat"><div class="stat-title">{{ t .lang "workers_dropped" }}</div><div id="workers-dropped" class="stat-value text-error">0</div></div>
+  </div>
+
+  <div class="overflow-x-auto bg-base-100 border border-base-300">
+    <table class="table table-zebra w-full">
+      <thead><tr>
+        <th>{{ t .lang "status" }}</th>
+        <th>Worker ID</th>
+        <th>URL</th>
+        <th>{{ t .lang "workers_queued" }}</th>
+        <th>{{ t .lang "workers_pulled" }}</th>
+        <th>{{ t .lang "workers_dropped" }}</th>
+        <th>{{ t .lang "workers_last_success" }}</th>
+        <th>{{ t .lang "workers_last_error" }}</th>
+      </tr></thead>
+      <tbody id="workers-body"></tbody>
+    </table>
+  </div>
+  {{ if not .workers }}
+  <div class="text-center text-base-content/50 py-12">{{ t .lang "workers_empty" }}</div>
+  {{ end }}
+  {{ end }}
+</div>
+
+{{ if .isMaster }}
+<script>
+  function workerTime(value) {
+    if (!value || value.startsWith("0001-")) return "-";
+    return new Date(value).toLocaleString();
+  }
+  function escapeWorker(value) {
+    const node = document.createElement("span");
+    node.textContent = value || "";
+    return node.innerHTML;
+  }
+  async function refreshWorkers() {
+    const response = await fetch("/api/workers");
+    const data = await response.json();
+    const workers = data.workers || [];
+    document.getElementById("workers-total").textContent = workers.length;
+    document.getElementById("workers-online").textContent = workers.filter(w => w.online).length;
+    document.getElementById("workers-queued").textContent = workers.reduce((n, w) => n + (w.queued || 0), 0);
+    document.getElementById("workers-dropped").textContent = workers.reduce((n, w) => n + (w.dropped || 0), 0);
+    document.getElementById("workers-body").innerHTML = workers.map(w => `
+      <tr>
+        <td><span class="badge ${w.online ? "badge-success" : "badge-error"}">${w.online ? "{{ t .lang "online" }}" : "{{ t .lang "offline" }}"}</span></td>
+        <td class="font-mono">${escapeWorker(w.worker_id || "-")}</td>
+        <td class="font-mono text-xs">${escapeWorker(w.url)}</td>
+        <td class="font-mono">${w.queued || 0}</td>
+        <td class="font-mono">${w.pulled || 0}</td>
+        <td class="font-mono">${w.dropped || 0}</td>
+        <td class="whitespace-nowrap">${workerTime(w.last_success)}</td>
+        <td class="text-error max-w-xs break-all">${escapeWorker(w.last_error || "-")}</td>
+      </tr>`).join("");
+  }
+  refreshWorkers();
+  setInterval(refreshWorkers, 5000);
+</script>
+{{ end }}
+{{ end }}
