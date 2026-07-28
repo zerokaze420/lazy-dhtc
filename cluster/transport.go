@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -154,9 +155,15 @@ func (p *MasterPuller) Configure(workerURLs []string, token string) {
 	workers := make([]string, 0, len(workerURLs))
 	for _, worker := range workerURLs {
 		worker = strings.TrimRight(strings.TrimSpace(worker), "/")
-		if worker != "" {
-			workers = append(workers, worker)
+		if worker == "" {
+			continue
 		}
+		parsed, err := url.Parse(worker)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			log.Warn().Str("worker", worker).Msg("Ignoring invalid Worker URL")
+			continue
+		}
+		workers = append(workers, worker)
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()

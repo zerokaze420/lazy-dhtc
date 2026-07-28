@@ -4,8 +4,10 @@ set -eu
 REPO="zerokaze420/lazy-dhtc"
 VERSION="latest"
 ADDRESS="0.0.0.0:4200"
-WORKER_ID="$(hostname 2>/dev/null || echo worker)"
+WORKER_ID=""
 TOKEN=""
+WORKER_ID_EXPLICIT=false
+TOKEN_EXPLICIT=false
 NETWORK_MODE="dual"
 QUEUE=256
 BATCH=16
@@ -22,14 +24,12 @@ usage() {
 Install dhtc Worker as a systemd service.
 
 Usage:
-  sudo ./install-worker.sh --token TOKEN [options]
-
-Required:
-  --token TOKEN              Shared token. Must match Master's -cluster-token.
+  sudo ./install-worker.sh [options]
 
 Connection:
   --address HOST:PORT        Public Worker HTTP listen address. Default: 0.0.0.0:4200
-  --worker-id ID             Worker name shown in Master GUI. Default: VPS hostname
+  --worker-id ID             Worker name shown in Master GUI. Default: generated and persisted
+  --token TOKEN              Shared Master token. Default: generated and persisted
   --network-mode MODE        DHT mode: dual or ipv4. Default: dual
 
 Resource limits:
@@ -48,10 +48,9 @@ Installation:
   -h, --help                 Show this help.
 
 Examples:
-  sudo ./install-worker.sh --token 'replace-with-long-random-token'
+  sudo ./install-worker.sh
 
   sudo ./install-worker.sh \
-    --token 'replace-with-long-random-token' \
     --worker-id tokyo-vps-01 \
     --address 0.0.0.0:4200 \
     --queue 128 \
@@ -65,7 +64,7 @@ After installation:
 Master configuration:
   dhtc -node-role master \
     -worker-urls 'https://worker.example.com:4200' \
-    -cluster-token 'the-same-token'
+    -cluster-token 'token printed by this installer'
 
 Security:
   Expose the Worker port only to the Master's public egress IP when possible.
@@ -82,9 +81,9 @@ need_value() {
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --token) need_value "$@"; TOKEN="$2"; shift 2 ;;
+    --token) need_value "$@"; TOKEN="$2"; TOKEN_EXPLICIT=true; shift 2 ;;
     --address) need_value "$@"; ADDRESS="$2"; shift 2 ;;
-    --worker-id) need_value "$@"; WORKER_ID="$2"; shift 2 ;;
+    --worker-id) need_value "$@"; WORKER_ID="$2"; WORKER_ID_EXPLICIT=true; shift 2 ;;
     --network-mode) need_value "$@"; NETWORK_MODE="$2"; shift 2 ;;
     --queue) need_value "$@"; QUEUE="$2"; shift 2 ;;
     --batch) need_value "$@"; BATCH="$2"; shift 2 ;;
@@ -101,12 +100,6 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-if [ -z "$TOKEN" ]; then
-  echo "--token is required" >&2
-  exit 2
-fi
-case "$TOKEN" in *[!A-Za-z0-9._~+/=-]*) echo "--token contains unsupported characters" >&2; exit 2 ;; esac
-case "$WORKER_ID" in ''|*[!A-Za-z0-9._-]*) echo "--worker-id may contain only letters, numbers, dot, underscore and dash" >&2; exit 2 ;; esac
 case "$SERVICE_USER" in ''|*[!A-Za-z0-9_-]*) echo "--service-user contains invalid characters" >&2; exit 2 ;; esac
 case "$SERVICE_NAME" in ''|*[!A-Za-z0-9_.@-]*) echo "--service-name contains invalid characters" >&2; exit 2 ;; esac
 case "$INSTALL_DIR:$DATA_DIR" in *' '*|*'\t'*) echo "Installation paths cannot contain whitespace" >&2; exit 2 ;; esac
@@ -117,7 +110,7 @@ for value in "$QUEUE" "$BATCH" "$MAX_DOWNLOADS" "$MAX_LEECHES" "$RATE_LIMIT"; do
   [ "$value" -gt 0 ] || { echo "Resource limits must be greater than zero" >&2; exit 2; }
 done
 
-for command in awk curl id install mktemp sha256sum systemctl uname useradd; do
+for command in awk curl id install mktemp od sha256sum systemctl tr uname useradd; do
   command -v "$command" >/dev/null 2>&1 || { echo "Required command not found: $command" >&2; exit 1; }
 done
 
@@ -132,6 +125,26 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "Run this installer as root (for example with sudo)." >&2
   exit 1
 fi
+
+ENV_FILE="/etc/${SERVICE_NAME}.env"
+if [ -f "$ENV_FILE" ]; then
+  if [ "$TOKEN_EXPLICIT" = false ]; then
+    TOKEN="$(awk -F= '$1 == "DHTC_CLUSTER_TOKEN" { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE")"
+  fi
+  if [ "$WORKER_ID_EXPLICIT" = false ]; then
+    WORKER_ID="$(awk -F= '$1 == "DHTC_WORKER_ID" { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE")"
+  fi
+fi
+if [ -z "$TOKEN" ]; then
+  TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+  echo "Generated a new cluster token."
+fi
+if [ -z "$WORKER_ID" ]; then
+  WORKER_ID="worker-$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
+  echo "Generated Worker ID: $WORKER_ID"
+fi
+case "$TOKEN" in *[!A-Za-z0-9._~+/=-]*) echo "--token contains unsupported characters" >&2; exit 2 ;; esac
+case "$WORKER_ID" in ''|*[!A-Za-z0-9._-]*) echo "--worker-id may contain only letters, numbers, dot, underscore and dash" >&2; exit 2 ;; esac
 
 ASSET="dhtc-worker-linux-${ARCH}"
 if [ "$VERSION" = "latest" ]; then
@@ -161,9 +174,9 @@ install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$DATA_DIR"
 install -d -m 0755 "$INSTALL_DIR"
 install -m 0755 "$TMP_DIR/$ASSET" "$INSTALL_DIR/dhtc-worker"
 
-ENV_FILE="/etc/${SERVICE_NAME}.env"
 umask 077
 printf 'DHTC_CLUSTER_TOKEN=%s\nDHTC_WORKER_ID=%s\n' "$TOKEN" "$WORKER_ID" > "$ENV_FILE"
+chmod 0600 "$ENV_FILE"
 
 UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 cat > "$UNIT_FILE" <<EOF
@@ -195,6 +208,25 @@ EOF
 systemctl daemon-reload
 systemctl enable --now "$SERVICE_NAME"
 
+PORT="${ADDRESS##*:}"
+PUBLIC_IPV4="$(curl -4 -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+PUBLIC_IPV6="$(curl -6 -fsS --max-time 5 https://api6.ipify.org 2>/dev/null || true)"
+WORKER_URLS=""
+if [ -n "$PUBLIC_IPV4" ]; then
+  WORKER_URLS="http://${PUBLIC_IPV4}:${PORT}"
+fi
+if [ -n "$PUBLIC_IPV6" ]; then
+  IPV6_URL="http://[${PUBLIC_IPV6}]:${PORT}"
+  if [ -n "$WORKER_URLS" ]; then
+    WORKER_URLS="${WORKER_URLS},${IPV6_URL}"
+  else
+    WORKER_URLS="$IPV6_URL"
+  fi
+fi
+if [ -z "$WORKER_URLS" ]; then
+  WORKER_URLS="http://<VPS_PUBLIC_IP>:${PORT}"
+fi
+
 echo
 echo "Installed successfully."
 echo "  Binary:  ${INSTALL_DIR}/dhtc-worker"
@@ -202,5 +234,11 @@ echo "  Data:    ${DATA_DIR}"
 echo "  Service: ${SERVICE_NAME}.service"
 echo "  Listen:  ${ADDRESS}"
 echo
+echo "Master connection settings:"
+echo "  Worker ID:     ${WORKER_ID}"
+echo "  Worker URLs:   ${WORKER_URLS}"
+echo "  Cluster Token: ${TOKEN}"
+echo
+echo "Add Worker URLs and Cluster Token to the Master's Worker settings."
 echo "Check status: systemctl status ${SERVICE_NAME}"
 echo "Follow logs:  journalctl -u ${SERVICE_NAME} -f"

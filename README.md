@@ -266,10 +266,10 @@ Debian、Ubuntu、Rocky Linux、AlmaLinux 等使用 systemd 的 VPS 可以直接
 ```shell
 curl -fsSL https://raw.githubusercontent.com/zerokaze420/lazy-dhtc/master/scripts/install-worker.sh -o install-worker.sh
 chmod +x install-worker.sh
-sudo ./install-worker.sh --token '替换为长随机密钥' --worker-id 'tokyo-vps-01'
+sudo ./install-worker.sh
 ```
 
-脚本会自动识别 `amd64/arm64`，下载最新 GitHub Release，校验 SHA256，创建低权限用户、路由表数据目录、Token 环境文件和 systemd 服务，并立即启动。查看全部参数：
+脚本会自动生成 Worker ID 和 256 位随机 Cluster Token，自动识别 `amd64/arm64`，下载最新 GitHub Release，校验 SHA256，创建低权限用户、路由表数据目录、Token 环境文件和 systemd 服务，并立即启动。安装结束会自动探测公网 IPv4/IPv6，并打印 `Worker URLs`、`Worker ID` 和 `Cluster Token`，可直接填写到 Master GUI。查看全部参数：
 
 ```shell
 ./install-worker.sh --help
@@ -279,7 +279,6 @@ sudo ./install-worker.sh --token '替换为长随机密钥' --worker-id 'tokyo-v
 
 ```shell
 sudo ./install-worker.sh \
-  --token '与 Master 相同的密钥' \
   --worker-id 'tokyo-vps-01' \
   --address '0.0.0.0:4200' \
   --queue 128 \
@@ -298,7 +297,9 @@ systemctl restart dhtc-worker
 curl http://127.0.0.1:4200/health
 ```
 
-重新运行安装脚本即可升级二进制并重建服务配置。公网防火墙应只允许 Master 的出口 IP 访问 Worker TCP `4200`；DHT 使用的 UDP 流量仍需允许出入站。
+重新运行安装脚本即可升级二进制并重建服务配置；未显式传入 `--worker-id` 或 `--token` 时会复用 `/etc/dhtc-worker.env` 中原有值，不会破坏 Master 配置。公网防火墙应只允许 Master 的出口 IP 访问 Worker TCP `4200`；DHT 使用的 UDP 流量仍需允许出入站。
+
+Master 支持通过 IPv4、IPv6 和 AAAA 域名连接 Worker。直接填写 IPv6 时必须使用标准 URL 方括号格式，例如 `http://[2001:db8::1]:4200`。Master 所在网络仍需具备对应的 IPv6出站连接能力。
 
 ## MCP 接口
 

@@ -96,3 +96,14 @@ func TestMasterPullerCanBeConfiguredDynamically(t *testing.T) {
 		t.Fatalf("worker status after reconfigure = %#v", status)
 	}
 }
+
+func TestMasterPullerAcceptsIPv6WorkerURL(t *testing.T) {
+	puller, err := NewMasterPuller([]string{"http://[2001:db8::1]:4200"}, "secret", func(dhtcclient.Metadata) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := puller.Status()
+	if len(status) != 1 || status[0].URL != "http://[2001:db8::1]:4200" {
+		t.Fatalf("IPv6 worker URL status = %#v", status)
+	}
+}
