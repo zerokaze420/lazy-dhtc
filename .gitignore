@@ -25,6 +25,7 @@ vendor/
 ui/static/css/style.css
 .lzc-cli-cache/
 dist-lpk/*.lpk
+ipv6-bootstrap-nodes.txt
 
 # Databases and data
 *.db

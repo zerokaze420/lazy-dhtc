@@ -37,6 +37,7 @@ type IndexingService struct {
 
 type IndexingServiceEventHandlers struct {
 	OnResult func(IndexingResult)
+	OnNodes6 func(CompactNodeInfos)
 }
 
 type IndexingResult struct {
@@ -269,6 +270,7 @@ func (is *IndexingService) onFindNodeResponse(response *Message, addr *net.UDPAd
 	for _, node := range response.R.Nodes6 {
 		is.addNode(node.ID, &node.Addr)
 	}
+	is.reportNodes6(response.R.Nodes6)
 }
 
 func (is *IndexingService) onGetPeersResponse(msg *Message, addr *net.UDPAddr) {
@@ -338,6 +340,19 @@ func (is *IndexingService) onSampleInfohashesResponse(msg *Message, addr *net.UD
 
 	for _, node := range msg.R.Nodes6 {
 		is.addNode(node.ID, &node.Addr)
+	}
+	is.reportNodes6(msg.R.Nodes6)
+}
+
+func (is *IndexingService) AddNodes(nodes CompactNodeInfos) {
+	for _, node := range nodes {
+		is.addNode(node.ID, &node.Addr)
+	}
+}
+
+func (is *IndexingService) reportNodes6(nodes CompactNodeInfos) {
+	if len(nodes) > 0 && is.eventHandlers.OnNodes6 != nil {
+		is.eventHandlers.OnNodes6(nodes)
 	}
 }
 

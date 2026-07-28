@@ -161,7 +161,11 @@ go run ./cmd/dhtc -help
 
 大部分运行参数也可以在 Web 设置页面中调整。部分涉及服务初始化的设置需要重启后生效。
 
-IPv6 模式要求宿主机或容器具有可用的 IPv6 网络，并且 bootstrap 文件中至少有一个能够解析为 AAAA 记录的域名或 `[IPv6地址]:端口` 节点。双栈模式会分别建立 IPv4 和 IPv6 DHT socket 与路由表。
+IPv6 模式要求宿主机或容器具有可用的 IPv6 网络。双栈模式会分别建立 IPv4 和 IPv6 DHT socket 与路由表。由于常用 Mainline DHT bootstrap 域名通常没有 AAAA 记录，首次部署建议先使用双栈模式学习 IPv6节点；缓存建立后即可切换为仅 IPv6模式。
+
+双栈模式还会通过 IPv4 DHT 查询请求 `nodes6`，把发现的公网 IPv6 DHT 节点保存到 `-IPv6BootstrapNodeFile`。LPK 默认将缓存写入 `/lzcapp/var/ipv6-bootstrap-nodes.txt`；后续启动以及仅 IPv6 模式都会自动使用这份缓存。
+
+运行时由一个 Scheduler 管理所有 IPv4/IPv6 DHT worker。每个 worker维护独立路由表，但发现结果汇入同一个 InfoHash 队列，并由一个元数据下载器统一去重和下载，最后写入配置的数据库后端。生产部署推荐使用 PostgreSQL。
 
 ## MCP 接口
 

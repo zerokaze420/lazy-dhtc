@@ -129,6 +129,7 @@
     </div>
 
     <form action="/settings" method="POST" class="contents">
+      <input type="hidden" name="IPv6BootstrapNodeFile" value="{{ .config.IPv6BootstrapNodeFile }}" />
       <!-- General Settings -->
       <div class="card bg-base-100 shadow-xl border border-base-300">
         <div class="card-body">

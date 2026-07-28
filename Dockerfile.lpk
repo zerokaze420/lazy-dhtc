@@ -23,4 +23,4 @@ RUN apt-get update \
 COPY --from=go-builder /out/dhtc /usr/local/bin/dhtc
 COPY bootstrap-nodes.txt name-blacklist.txt file-blacklist.txt /usr/local/share/dhtc/
 EXPOSE 4200
-CMD ["dhtc", "-address", "0.0.0.0:4200", "-database", "/lzcapp/var/dhtcdb", "-BootstrapNodeFile", "/usr/local/share/dhtc/bootstrap-nodes.txt"]
+CMD ["dhtc", "-address", "0.0.0.0:4200", "-database", "/lzcapp/var/dhtcdb", "-BootstrapNodeFile", "/usr/local/share/dhtc/bootstrap-nodes.txt", "-IPv6BootstrapNodeFile", "/lzcapp/var/ipv6-bootstrap-nodes.txt"]

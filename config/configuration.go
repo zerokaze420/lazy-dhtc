@@ -40,6 +40,7 @@ type Configuration struct {
 	CrawlerStartOnLaunch   bool   `form:"CrawlerStartOnLaunch"`
 	MaxSavedTorrents       int    `form:"MaxSavedTorrents"`
 	NetworkMode            string `form:"NetworkMode"`
+	IPv6BootstrapNodeFile  string `form:"IPv6BootstrapNodeFile"`
 
 	EnableBlacklist    bool   `form:"EnableBlacklist"`
 	NameBlacklist      string `form:"NameBlacklist"`
@@ -99,6 +100,7 @@ func ParseArguments() *Configuration {
 	flag.BoolVar(&config.CrawlerStartOnLaunch, "CrawlerStartOnLaunch", false, "start crawler automatically when the app launches")
 	flag.IntVar(&config.MaxSavedTorrents, "MaxSavedTorrents", 20000, "maximum saved torrents before pruning oldest entries (0 disables pruning)")
 	flag.StringVar(&config.NetworkMode, "NetworkMode", "ipv4", "DHT network mode (ipv4, ipv6, dual)")
+	flag.StringVar(&config.IPv6BootstrapNodeFile, "IPv6BootstrapNodeFile", "ipv6-bootstrap-nodes.txt", "learned IPv6 DHT bootstrap node cache")
 
 	flag.BoolVar(&config.EnableBlacklist, "EnableBlacklist", false, "enable blacklists")
 	flag.StringVar(&config.NameBlacklist, "NameBlacklist", "", "blacklist for torrent names")

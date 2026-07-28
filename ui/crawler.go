@@ -63,9 +63,7 @@ func (m *CrawlerManager) Start() bool {
 	m.threads = threads
 	m.autoStopAt = time.Time{}
 
-	for range threads {
-		go m.crawl(stop)
-	}
+	go m.crawl(stop, threads)
 
 	if m.configuration.CrawlerAutoStopMinutes > 0 {
 		m.autoStopAt = m.startedAt.Add(time.Duration(m.configuration.CrawlerAutoStopMinutes) * time.Minute)
@@ -127,10 +125,10 @@ func (m *CrawlerManager) stopLocked() bool {
 	return true
 }
 
-func (m *CrawlerManager) crawl(stop <-chan struct{}) {
-	endpoints := crawlerEndpoints(m.configuration.NetworkMode)
+func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
+	endpoints := crawlerEndpoints(m.configuration.NetworkMode, threads)
 
-	trawlingManager := dhtcclient.NewManager(m.bootstrapNodes, endpoints, 10*time.Second, m.configuration.MaxNeighbors, m.configuration.RateLimit)
+	trawlingManager := dhtcclient.NewManager(m.bootstrapNodes, endpoints, 10*time.Second, m.configuration.MaxNeighbors, m.configuration.RateLimit, m.configuration.IPv6BootstrapNodeFile)
 	metadataSink := dhtcclient.NewSink(m.configuration.DrainTimeout, m.configuration.MaxLeeches, m.configuration.MaxConcurrentDownloads)
 	defer trawlingManager.Terminate()
 	defer metadataSink.Terminate()
@@ -157,16 +155,24 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}) {
 	}
 }
 
-func crawlerEndpoints(mode string) []dhtcclient.ListenEndpoint {
+func crawlerEndpoints(mode string, threads int) []dhtcclient.ListenEndpoint {
+	if threads < 1 {
+		threads = 1
+	}
+	endpoints := make([]dhtcclient.ListenEndpoint, 0, threads*2)
+	add := func(network, address string) {
+		for range threads {
+			endpoints = append(endpoints, dhtcclient.ListenEndpoint{Network: network, Address: address})
+		}
+	}
 	switch config.NormalizeNetworkMode(mode) {
 	case config.NetworkModeIPv6:
-		return []dhtcclient.ListenEndpoint{{Network: "udp6", Address: "[::]:0"}}
+		add("udp6", "[::]:0")
 	case config.NetworkModeDual:
-		return []dhtcclient.ListenEndpoint{
-			{Network: "udp4", Address: "0.0.0.0:0"},
-			{Network: "udp6", Address: "[::]:0"},
-		}
+		add("udp4", "0.0.0.0:0")
+		add("udp6", "[::]:0")
 	default:
-		return []dhtcclient.ListenEndpoint{{Network: "udp4", Address: "0.0.0.0:0"}}
+		add("udp4", "0.0.0.0:0")
 	}
+	return endpoints
 }

@@ -14,12 +14,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var (
-	defaultBootstrapNodes = []string{
-		"router.bittorrent.com:6881", "router.utorrent.com:6881",
-		"dht.transmissionbt.com:6881", "dht.libtorrent.org:25401",
-	}
-)
+var defaultBootstrapNodes = []string{
+	"router.bittorrent.com:6881", "router.utorrent.com:6881",
+	"dht.transmissionbt.com:6881", "dht.libtorrent.org:25401",
+}
 
 func ReadFileLines(filePath string) []string {
 	var rVal []string
