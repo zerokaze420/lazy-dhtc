@@ -39,7 +39,7 @@ type ListenEndpoint struct {
 
 func NewManager(endpoints []ListenEndpoint, interval time.Duration, maxNeighbors uint, rateLimit int) *Manager {
 	manager := new(Manager)
-	manager.output = make(chan Result, 20)
+	manager.output = make(chan Result, 1024)
 	manager.done = make(chan struct{})
 	manager.ctx, manager.cancel = context.WithCancel(context.Background())
 
