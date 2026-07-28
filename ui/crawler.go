@@ -55,16 +55,20 @@ func NewCrawlerManager(configuration *config.Configuration, bootstrapNodes4 []st
 		bootstrapNodes4: bootstrapNodes4,
 	}
 	manager.onMetadata = func(md dhtcclient.Metadata) bool {
-		if !manager.database.InsertMetadata(md) {
-			return false
-		}
-		fmt.Println("\t + Added:", md.Name)
-		db.CheckWatches(manager.configuration, manager.database, md, manager.notifier)
-		manager.hub.BroadcastMetadata(md)
-		return true
+		return IngestMetadata(manager.configuration, manager.database, manager.notifier, manager.hub, md)
 	}
 	go manager.scheduleLoop()
 	return manager
+}
+
+func IngestMetadata(configuration *config.Configuration, database db.Repository, nManager *notifier.Manager, hub *Hub, md dhtcclient.Metadata) bool {
+	if !database.InsertMetadata(md) {
+		return false
+	}
+	fmt.Println("\t + Added:", md.Name)
+	db.CheckWatches(configuration, database, md, nManager)
+	hub.BroadcastMetadata(md)
+	return true
 }
 
 func NewWorkerCrawlerManager(configuration *config.Configuration, bootstrapNodes4 []string, onMetadata func(dhtcclient.Metadata) bool) *CrawlerManager {

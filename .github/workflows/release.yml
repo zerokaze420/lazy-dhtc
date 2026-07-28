@@ -17,15 +17,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: '1.25'
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
@@ -37,7 +37,11 @@ jobs:
 
       - name: Build Linux
         if: runner.os == 'Linux'
-        run: go build -v -o dhtc-linux cmd/dhtc/main.go
+        run: |
+          go build -v -o dhtc-linux cmd/dhtc/main.go
+          GOARCH=amd64 ./scripts/build-worker.sh dhtc-worker-linux-amd64
+          GOARCH=arm64 ./scripts/build-worker.sh dhtc-worker-linux-arm64
+          sha256sum dhtc-linux dhtc-worker-linux-amd64 dhtc-worker-linux-arm64 > SHA256SUMS-linux.txt
 
       - name: Build macOS
         if: runner.os == 'macOS'
@@ -48,7 +52,9 @@ jobs:
         run: go build -v -o dhtc-windows.exe cmd/dhtc/main.go
 
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: dhtc-*
+          files: |
+            dhtc-*
+            SHA256SUMS-*.txt

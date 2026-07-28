@@ -17,15 +17,15 @@ jobs:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: '1.25'
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
@@ -38,6 +38,13 @@ jobs:
       - name: Build Linux
         if: runner.os == 'Linux'
         run: go build -v -o dhtc-linux cmd/dhtc/main.go
+
+      - name: Build static Worker binaries
+        if: runner.os == 'Linux'
+        run: |
+          GOARCH=amd64 ./scripts/build-worker.sh dist/dhtc-worker-linux-amd64
+          GOARCH=arm64 ./scripts/build-worker.sh dist/dhtc-worker-linux-arm64
+          file dist/dhtc-worker-linux-*
 
       - name: Build macOS
         if: runner.os == 'macOS'

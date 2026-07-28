@@ -7,6 +7,7 @@ import (
 	"dhtc/cluster"
 	"dhtc/config"
 	"dhtc/db"
+	dhtcclient "dhtc/dhtc-client"
 	"dhtc/notifier"
 	"dhtc/ui"
 	"fmt"
@@ -100,6 +101,15 @@ func main() {
 		}
 	}
 	crawler := ui.NewCrawlerManager(cfg, bootstrapNodes, database, nManager, hub)
+	if cfg.NodeRole == "master" && strings.TrimSpace(cfg.WorkerURLs) != "" {
+		puller, err := cluster.NewMasterPuller(splitList(cfg.WorkerURLs), cfg.ClusterToken, func(md dhtcclient.Metadata) bool {
+			return ui.IngestMetadata(cfg, database, nManager, hub, md)
+		})
+		if err != nil {
+			log.Fatal().Err(err).Msg("invalid master worker configuration")
+		}
+		go puller.Run(context.Background())
+	}
 	if !cfg.OnlyWebServer && cfg.CrawlerStartOnLaunch && !cfg.CrawlerScheduleEnabled {
 		crawler.Start()
 	}
@@ -114,22 +124,22 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 	if cfg.MaxLeeches == 128 {
 		cfg.MaxLeeches = 32
 	}
-	sink, err := cluster.NewWorkerSink(cfg.MasterURL, cfg.ClusterToken, cfg.WorkerID, cfg.WorkerQueue, cfg.WorkerBatch)
-	if err != nil {
-		log.Fatal().Err(err).Msg("invalid worker configuration")
+	if strings.TrimSpace(cfg.ClusterToken) == "" {
+		log.Fatal().Msg("cluster token is required in worker mode")
 	}
+	queue := cluster.NewWorkerQueue(cfg.WorkerID, cfg.WorkerQueue)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	go sink.Run(ctx)
-	crawler := ui.NewWorkerCrawlerManager(cfg, bootstrapNodes, sink.Enqueue)
+	crawler := ui.NewWorkerCrawlerManager(cfg, bootstrapNodes, queue.Enqueue)
 	if !cfg.CrawlerScheduleEnabled {
 		crawler.Start()
 	}
 
 	mux := http.NewServeMux()
+	mux.Handle(cluster.QueuePath, queue.Handler(cfg.ClusterToken, cfg.WorkerBatch))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"ok","role":"worker","queued":%d,"dropped":%d}`, sink.QueueLength(), sink.Dropped())
+		fmt.Fprintf(w, `{"status":"ok","role":"worker","queued":%d,"dropped":%d}`, queue.Length(), queue.Dropped())
 	})
 	server := &http.Server{Addr: cfg.Address, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -138,10 +148,16 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 			cancel()
 		}
 	}()
-	log.Info().Str("worker_id", cfg.WorkerID).Str("master", cfg.MasterURL).Int("queue", cfg.WorkerQueue).Int("batch", cfg.WorkerBatch).Msg("Worker started")
+	log.Info().Str("worker_id", cfg.WorkerID).Str("listen", cfg.Address).Int("queue", cfg.WorkerQueue).Int("batch", cfg.WorkerBatch).Msg("Worker started")
 	<-ctx.Done()
 	crawler.Stop()
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	_ = server.Shutdown(shutdownCtx)
+}
+
+func splitList(value string) []string {
+	return strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	})
 }

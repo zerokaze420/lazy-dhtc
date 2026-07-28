@@ -43,3 +43,14 @@ func TestNormalizeNodeRole(t *testing.T) {
 		t.Fatal("node role normalization failed")
 	}
 }
+
+func TestWorkerBinaryDefaultsToWorkerRole(t *testing.T) {
+	originalArgs := os.Args
+	originalFlags := flag.CommandLine
+	defer func() { os.Args = originalArgs; flag.CommandLine = originalFlags }()
+	os.Args = []string{"dhtc-worker-linux-amd64"}
+	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+	if cfg := ParseArguments(); cfg.NodeRole != "worker" {
+		t.Fatalf("worker binary role = %q, want worker", cfg.NodeRole)
+	}
+}

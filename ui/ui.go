@@ -80,10 +80,6 @@ func RunWebServer(configuration *config.Configuration, database db.Repository, h
 			configuration.AuthUser: configuration.AuthPass,
 		})
 		srv.Use(func(ctx *gin.Context) {
-			if ctx.Request.URL.Path == "/api/worker/v1/metadata" {
-				ctx.Next()
-				return
-			}
 			basicAuth(ctx)
 		})
 	}
@@ -134,7 +130,6 @@ func RunWebServer(configuration *config.Configuration, database db.Repository, h
 		api.GET("/categories", uiCtrl.APICategories)
 		api.GET("/latest", uiCtrl.APILatest)
 	}
-	srv.POST("/api/worker/v1/metadata", uiCtrl.WorkerMetadataIngest)
 
 	css, _ := fs.Sub(static, "static/css")
 	js, _ := fs.Sub(static, "static/js")

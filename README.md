@@ -154,7 +154,7 @@ go run ./cmd/dhtc
 | `-RoutingTableCacheIPv6` | `routing-table-v6.json` | IPv6 路由表缓存 |
 | `-config` | 空 | 可选的双栈 YAML 配置文件 |
 | `-node-role` | `standalone` | 节点角色：`standalone`、`master`、`worker` |
-| `-master-url` | 空 | Worker 上报目标，例如 `http://master:4200` |
+| `-worker-urls` | 空 | Master 主动拉取的公网 Worker 地址列表 |
 | `-cluster-token` | 空 | Master 与 Worker 共享的鉴权 Token |
 | `-worker-id` | `worker` | Worker 唯一标识 |
 | `-worker-queue` | `256` | Worker 内存待发送队列上限 |
@@ -205,20 +205,25 @@ crawler:
 
 ## 主从部署
 
-`master` 负责数据库、搜索、Dashboard、统计、通知和 Worker 数据接收。`worker` 只运行 DHT、Metadata 下载、内存发送队列和健康检查，不打开数据库，也不加载完整 Web UI。
+`master` 负责数据库、搜索、Dashboard、统计、通知，并主动从公网 Worker 拉取数据。`worker` 只运行 DHT、Metadata 下载、内存队列和带鉴权的拉取接口，不打开数据库，也不加载完整 Web UI。
+
+该模式适用于 Worker 有公网地址、Master 没有公网入口的网络拓扑。所有集群连接均由 Master 向公网 Worker 发起，Worker 不需要访问 Master。
 
 Master 示例：
 
 ```shell
-dhtc -node-role master -cluster-token "change-me" -database-type postgres -database-url "postgres://..."
+dhtc \
+  -node-role master \
+  -worker-urls "https://worker-01.example.com:4200,https://worker-02.example.com:4200" \
+  -cluster-token "change-me" \
+  -database-type postgres \
+  -database-url "postgres://..."
 ```
 
 低资源 Worker 示例：
 
 ```shell
 dhtc \
-  -node-role worker \
-  -master-url "http://master:4200" \
   -cluster-token "change-me" \
   -worker-id "edge-01" \
   -MaxConcurrentDownloads 2 \
@@ -229,7 +234,28 @@ dhtc \
 
 Worker 最低建议配置为 `1 vCPU、512 MB 内存、256 MB 可用磁盘`。磁盘主要保存 IPv4/IPv6 路由表缓存；待发送 Metadata 当前使用有界内存队列，不写本地种子数据库。更稳定的配置为 `1 vCPU、1 GB 内存`。
 
-Master 暂时不可达时，Worker 会保留一个固定批次并重试，队列满后拒绝新数据并记录丢弃数量，避免低配节点内存持续增长。Worker 健康接口 `/health` 会返回当前排队数和丢弃数。本阶段尚未实现磁盘补发队列，因此 Worker 重启会丢失尚未上传的数据。
+Master 每 5 秒主动拉取一次。Worker 只有在收到 Master 的确认后才删除记录；拉取或确认中断时，同一记录会再次出现，由 Master 的 InfoHash 唯一约束保证幂等。队列满后 Worker 拒绝新数据并记录丢弃数量，避免低配节点内存持续增长。Worker 健康接口 `/health` 会返回当前排队数和丢弃数。本阶段尚未实现磁盘队列，因此 Worker 重启会丢失尚未被 Master 确认的数据。
+
+### Worker 单文件构建
+
+Worker 不需要数据库、配置文件、Bootstrap 文件或 Web 静态资源目录。构建静态 Linux 单文件：
+
+```shell
+./scripts/build-worker.sh
+```
+
+输出文件默认为 `dist/dhtc-worker-linux-amd64`。部署时只需要这个二进制：
+
+```shell
+./dhtc-worker-linux-amd64 \
+  -address 0.0.0.0:4200 \
+  -cluster-token "change-me" \
+  -worker-id "edge-01"
+```
+
+生产环境应通过防火墙只允许 Master 的出口 IP 访问 Worker 的 TCP `4200`，并为该接口配置 HTTPS。DHT 仍需要宿主机允许 UDP4/UDP6 出入站。
+
+名称包含 `dhtc-worker` 的发布二进制默认自动进入 `worker` 角色，不启动 GUI，也不需要传入 `-node-role worker`。它只提供 `/health` 和带 Token 鉴权的 `/api/worker/v1/queue`。
 
 ## MCP 接口
 

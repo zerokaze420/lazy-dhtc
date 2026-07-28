@@ -3,6 +3,7 @@ package config
 import (
 	"flag"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,7 +17,7 @@ const (
 
 type Configuration struct {
 	NodeRole     string
-	MasterURL    string
+	WorkerURLs   string
 	ClusterToken string
 	WorkerID     string
 	WorkerQueue  int
@@ -135,9 +136,13 @@ func ParseArguments() *Configuration {
 		}
 		return fallback
 	}
+	defaultRole := "standalone"
+	if strings.Contains(strings.ToLower(filepath.Base(os.Args[0])), "dhtc-worker") {
+		defaultRole = "worker"
+	}
 
-	flag.StringVar(&config.NodeRole, "node-role", "standalone", "node role (standalone, master, worker)")
-	flag.StringVar(&config.MasterURL, "master-url", "", "master base URL for worker uploads")
+	flag.StringVar(&config.NodeRole, "node-role", defaultRole, "node role (standalone, master, worker)")
+	flag.StringVar(&config.WorkerURLs, "worker-urls", "", "comma-separated public worker URLs for master polling")
 	flag.StringVar(&config.ClusterToken, "cluster-token", "", "shared token for worker authentication")
 	flag.StringVar(&config.WorkerID, "worker-id", "", "stable worker identifier")
 	flag.IntVar(&config.WorkerQueue, "worker-queue", 256, "maximum metadata records buffered by a worker")
