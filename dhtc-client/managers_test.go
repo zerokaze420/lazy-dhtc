@@ -1,74 +1,58 @@
 package dhtc_client
 
 import (
-	"net"
-	"os"
+	"net/netip"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
 
-func TestIPv6BootstrapCacheRoundTrip(t *testing.T) {
-	cachePath := filepath.Join(t.TempDir(), "nodes6.txt")
-	manager := &Manager{
-		ipv6CachePath: cachePath,
-		ipv6Cache:     make(map[string]struct{}),
-	}
-	manager.cacheIPv6Nodes(CompactNodeInfos{
-		{ID: make([]byte, 20), Addr: net.UDPAddr{IP: net.ParseIP("2001:db8::1"), Port: 6881}},
-		{ID: make([]byte, 20), Addr: net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 6881}},
-		{ID: make([]byte, 20), Addr: net.UDPAddr{IP: net.ParseIP("fe80::1"), Port: 6881}},
-	})
-
-	data, err := os.ReadFile(cachePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.TrimSpace(string(data)); got != "[2001:db8::1]:6881" {
-		t.Fatalf("unexpected cache contents: %q", got)
-	}
-
-	reloaded := &Manager{ipv6CachePath: cachePath, ipv6Cache: make(map[string]struct{})}
-	nodes := reloaded.loadIPv6BootstrapNodes()
-	if len(nodes) != 1 || nodes[0] != "[2001:db8::1]:6881" {
-		t.Fatalf("unexpected reloaded nodes: %#v", nodes)
-	}
-}
-
-func TestDualStackIPv4ServiceRequestsNodes6(t *testing.T) {
-	manager := NewManager(nil, []ListenEndpoint{
+func TestDualStackNetworksRequestOnlyTheirOwnAddressFamily(t *testing.T) {
+	manager := NewManager([]ListenEndpoint{
 		{Network: "udp4", Address: "127.0.0.1:0"},
 		{Network: "udp6", Address: "[::1]:0"},
-	}, time.Hour, 10, 0, filepath.Join(t.TempDir(), "nodes6.txt"))
+	}, time.Hour, 10, 0)
 	defer manager.Terminate()
 
-	service, ok := manager.indexingServices[0].(*IndexingService)
-	if !ok {
-		t.Fatal("IPv4 indexing service has unexpected type")
-	}
-	if len(service.want) != 2 || service.want[0] != "n4" || service.want[1] != "n6" {
-		t.Fatalf("unexpected dual-stack want list: %#v", service.want)
+	wants := [][]string{{"n4"}, {"n6"}}
+	for i, expected := range wants {
+		service := manager.indexingServices[i].(*IndexingService)
+		if len(service.want) != 1 || service.want[0] != expected[0] {
+			t.Fatalf("service %d want list = %#v, want %#v", i, service.want, expected)
+		}
 	}
 }
 
-func TestManagerInjectsLearnedNodesIntoIPv6Service(t *testing.T) {
-	service := NewIndexingService("udp6", "[::1]:0", time.Hour, 10, 0, IndexingServiceEventHandlers{})
-	manager := &Manager{
-		ipv6Services:  []*IndexingService{service},
-		ipv6CachePath: filepath.Join(t.TempDir(), "nodes6.txt"),
-		ipv6Cache:     make(map[string]struct{}),
-	}
-	node := CompactNodeInfo{
-		ID:   []byte("12345678901234567890"),
-		Addr: net.UDPAddr{IP: net.ParseIP("2001:db8::2"), Port: 6881},
-	}
-	manager.onNodes6(CompactNodeInfos{node})
+func TestRoutingTableCacheRoundTrip(t *testing.T) {
+	cachePath := filepath.Join(t.TempDir(), "routing-v6.json")
+	service := NewIndexingService("udp6", "[::1]:0", cachePath, time.Hour, 10, 0, IndexingServiceEventHandlers{})
+	node := CompactNodeInfo{ID: []byte("12345678901234567890"), Addr: netip.MustParseAddrPort("[2001:db8::3]:6881")}
+	service.addNode(node.ID, node.Addr)
+	service.saveRoutingTable()
 
-	service.routingTableMutex.RLock()
-	defer service.routingTableMutex.RUnlock()
-	addr, ok := service.routingTable[string(node.ID)]
-	if !ok || !addr.IP.Equal(node.Addr.IP) || addr.Port != node.Addr.Port {
-		t.Fatalf("learned IPv6 node was not injected: %#v", addr)
+	restored := NewIndexingService("udp6", "[::1]:0", cachePath, time.Hour, 10, 0, IndexingServiceEventHandlers{})
+	restored.loadRoutingTable()
+	if restored.routingTableSize() != 1 {
+		t.Fatalf("restored routing table size = %d, want 1", restored.routingTableSize())
+	}
+	got := restored.routingTable.Snapshot()[0].Addr
+	if got != node.Addr {
+		t.Fatalf("restored address = %v, want %v", got, node.Addr)
+	}
+}
+
+func TestDualStackRoutingTablesAreIndependent(t *testing.T) {
+	manager := NewManager([]ListenEndpoint{
+		{Network: "udp4", Address: "127.0.0.1:0"},
+		{Network: "udp6", Address: "[::1]:0"},
+	}, time.Hour, 16, 0)
+	defer manager.Terminate()
+
+	ipv4 := manager.indexingServices[0].(*IndexingService)
+	ipv6 := manager.indexingServices[1].(*IndexingService)
+	ipv4.addNode([]byte("12345678901234567890"), netip.MustParseAddrPort("192.0.2.1:6881"))
+
+	if ipv4.routingTableSize() != 1 || ipv6.routingTableSize() != 0 {
+		t.Fatalf("routing table sizes = (%d, %d), want (1, 0)", ipv4.routingTableSize(), ipv6.routingTableSize())
 	}
 }

@@ -1,7 +1,7 @@
 package dhtc_client
 
 import (
-	"net"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -80,7 +80,7 @@ type Sink struct {
 	drain                  chan Metadata
 	drainMx                sync.Mutex
 
-	incomingInfoHashes   map[string][]net.TCPAddr
+	incomingInfoHashes   map[string][]netip.AddrPort
 	incomingInfoHashesMx sync.Mutex
 
 	terminated  atomic.Bool

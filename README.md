@@ -145,7 +145,13 @@ go run ./cmd/dhtc
 | `-database-url` | 空 | GORM 数据库连接地址 |
 | `-CrawlerThreads` | `2` | DHT 爬虫线程数 |
 | `-CrawlerStartOnLaunch` | `false` | 启动应用时自动开始采集 |
-| `-NetworkMode` | `ipv4` | DHT 网络模式：`ipv4`、`ipv6` 或 `dual` |
+| `-NetworkMode` | `dual` | DHT 网络模式：`ipv4`、`ipv6` 或 `dual` |
+| `-ListenIPv4` | `0.0.0.0:0` | IPv4 DHT UDP 监听地址 |
+| `-ListenIPv6` | `[::]:0` | IPv6 DHT UDP 监听地址 |
+| `-BootstrapNodeFileIPv6` | `bootstrap-nodes6.txt` | IPv6 DHT Bootstrap 节点文件 |
+| `-RoutingTableCacheIPv4` | `routing-table-v4.json` | IPv4 路由表缓存 |
+| `-RoutingTableCacheIPv6` | `routing-table-v6.json` | IPv6 路由表缓存 |
+| `-config` | 空 | 可选的双栈 YAML 配置文件 |
 | `-CrawlerAutoStopMinutes` | `0` | 自动停止采集的分钟数，`0` 表示不自动停止 |
 | `-MaxSavedTorrents` | `20000` | 最多保存的种子数量，`0` 表示不限制 |
 | `-OnlyChineseContent` | `false` | 仅保存名称或文件路径包含中文字符的种子 |
@@ -161,11 +167,31 @@ go run ./cmd/dhtc -help
 
 大部分运行参数也可以在 Web 设置页面中调整。部分涉及服务初始化的设置需要重启后生效。
 
-IPv6 模式要求宿主机或容器具有可用的 IPv6 网络。双栈模式会分别建立 IPv4 和 IPv6 DHT socket 与路由表。由于常用 Mainline DHT bootstrap 域名通常没有 AAAA 记录，首次部署建议先使用双栈模式学习 IPv6节点；缓存建立后即可切换为仅 IPv6模式。
+IPv6 模式要求宿主机或容器具有可用的 IPv6 网络。按照 BEP 5 与 BEP 32，IPv4 DHT 和 IPv6 DHT 是完全独立的 Overlay：各自拥有 UDP Socket、节点 ID、KBucket 路由表、查询、Token、Bootstrap、刷新任务与持久化缓存。双栈模式不会把 IPv4 DHT 返回的节点注入 IPv6 路由表。
 
-双栈模式还会通过 IPv4 DHT 查询请求 `nodes6`，把发现的公网 IPv6 DHT 节点保存到 `-IPv6BootstrapNodeFile`。LPK 默认将缓存写入 `/lzcapp/var/ipv6-bootstrap-nodes.txt`；后续启动以及仅 IPv6 模式都会自动使用这份缓存。
+常用 Mainline DHT Bootstrap 域名通常没有 AAAA 记录，因此首次运行 IPv6-only 模式时，应在 `bootstrap-nodes6.txt` 或 YAML 的 `bootstrap.ipv6` 中提供可用的 IPv6 Mainline DHT 节点。支持 AAAA 域名和 `[IPv6]:端口` 格式。Bootstrap 失败不会阻止程序运行；程序会先恢复 IPv6 路由表缓存，仅在缓存节点不足时继续尝试 Bootstrap。
 
-运行时由一个 Scheduler 管理所有 IPv4/IPv6 DHT worker。每个 worker维护独立路由表，但发现结果汇入同一个 InfoHash 队列，并由一个元数据下载器统一去重和下载，最后写入配置的数据库后端。生产部署推荐使用 PostgreSQL。
+可选 YAML 配置示例：
+
+```yaml
+network:
+  mode: dual
+listen:
+  ipv4: "0.0.0.0:6881"
+  ipv6: "[::]:6881"
+bootstrap:
+  ipv4:
+    - "router.bittorrent.com:6881"
+  ipv6:
+    - "[2001:db8::1]:6881"
+routing_cache:
+  ipv4: "routing-table-v4.json"
+  ipv6: "routing-table-v6.json"
+```
+
+使用 `go run ./cmd/dhtc -config dhtc.yml` 启动。显式命令行参数会覆盖 YAML 中对应的网络模式、监听地址和缓存路径。
+
+运行时由一个 Scheduler 管理 IPv4/IPv6 DHT Network。两套 Network 发现的 InfoHash 汇入同一个队列，由共享的 Metadata Downloader 去重并根据 Peer 地址自动选择 `tcp4` 或 `tcp6`，最后写入同一个数据库。InfoHash 不区分地址族，数据库结构无需修改。
 
 ## MCP 接口
 

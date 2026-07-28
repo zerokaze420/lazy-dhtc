@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 type CrawlerStatus struct {
@@ -20,26 +22,28 @@ type CrawlerStatus struct {
 }
 
 type CrawlerManager struct {
-	mu             sync.Mutex
-	configuration  *config.Configuration
-	database       db.Repository
-	notifier       *notifier.Manager
-	hub            *Hub
-	bootstrapNodes []string
-	stop           chan struct{}
-	startedAt      time.Time
-	autoStopAt     time.Time
-	threads        int
-	running        bool
+	mu              sync.Mutex
+	configuration   *config.Configuration
+	database        db.Repository
+	notifier        *notifier.Manager
+	hub             *Hub
+	bootstrapNodes4 []string
+	bootstrapNodes6 []string
+	stop            chan struct{}
+	startedAt       time.Time
+	autoStopAt      time.Time
+	threads         int
+	running         bool
 }
 
-func NewCrawlerManager(configuration *config.Configuration, bootstrapNodes []string, database db.Repository, nManager *notifier.Manager, hub *Hub) *CrawlerManager {
+func NewCrawlerManager(configuration *config.Configuration, bootstrapNodes4, bootstrapNodes6 []string, database db.Repository, nManager *notifier.Manager, hub *Hub) *CrawlerManager {
 	return &CrawlerManager{
-		configuration:  configuration,
-		database:       database,
-		notifier:       nManager,
-		hub:            hub,
-		bootstrapNodes: bootstrapNodes,
+		configuration:   configuration,
+		database:        database,
+		notifier:        nManager,
+		hub:             hub,
+		bootstrapNodes4: bootstrapNodes4,
+		bootstrapNodes6: bootstrapNodes6,
 	}
 }
 
@@ -126,9 +130,14 @@ func (m *CrawlerManager) stopLocked() bool {
 }
 
 func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
-	endpoints := crawlerEndpoints(m.configuration.NetworkMode, threads)
+	endpoints := crawlerEndpoints(m.configuration, m.bootstrapNodes4, m.bootstrapNodes6)
+	_ = threads
+	mode := config.NormalizeNetworkMode(m.configuration.NetworkMode)
+	log.Info().Str("mode", mode).Msg("Network Mode")
+	log.Info().Bool("enabled", mode != config.NetworkModeIPv6).Msg("IPv4 DHT")
+	log.Info().Bool("enabled", mode != config.NetworkModeIPv4).Msg("IPv6 DHT")
 
-	trawlingManager := dhtcclient.NewManager(m.bootstrapNodes, endpoints, 10*time.Second, m.configuration.MaxNeighbors, m.configuration.RateLimit, m.configuration.IPv6BootstrapNodeFile)
+	trawlingManager := dhtcclient.NewManager(endpoints, 10*time.Second, m.configuration.MaxNeighbors, m.configuration.RateLimit)
 	metadataSink := dhtcclient.NewSink(m.configuration.DrainTimeout, m.configuration.MaxLeeches, m.configuration.MaxConcurrentDownloads)
 	defer trawlingManager.Terminate()
 	defer metadataSink.Terminate()
@@ -155,24 +164,18 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
 	}
 }
 
-func crawlerEndpoints(mode string, threads int) []dhtcclient.ListenEndpoint {
-	if threads < 1 {
-		threads = 1
-	}
-	endpoints := make([]dhtcclient.ListenEndpoint, 0, threads*2)
-	add := func(network, address string) {
-		for range threads {
-			endpoints = append(endpoints, dhtcclient.ListenEndpoint{Network: network, Address: address})
-		}
-	}
-	switch config.NormalizeNetworkMode(mode) {
+func crawlerEndpoints(configuration *config.Configuration, bootstrap4, bootstrap6 []string) []dhtcclient.ListenEndpoint {
+	endpoints := make([]dhtcclient.ListenEndpoint, 0, 2)
+	switch config.NormalizeNetworkMode(configuration.NetworkMode) {
 	case config.NetworkModeIPv6:
-		add("udp6", "[::]:0")
+		endpoints = append(endpoints, dhtcclient.ListenEndpoint{Network: "udp6", Address: configuration.ListenIPv6, CachePath: configuration.RoutingTableCacheIPv6, Bootstrap: bootstrap6})
 	case config.NetworkModeDual:
-		add("udp4", "0.0.0.0:0")
-		add("udp6", "[::]:0")
+		endpoints = append(endpoints,
+			dhtcclient.ListenEndpoint{Network: "udp4", Address: configuration.ListenIPv4, CachePath: configuration.RoutingTableCacheIPv4, Bootstrap: bootstrap4},
+			dhtcclient.ListenEndpoint{Network: "udp6", Address: configuration.ListenIPv6, CachePath: configuration.RoutingTableCacheIPv6, Bootstrap: bootstrap6},
+		)
 	default:
-		add("udp4", "0.0.0.0:0")
+		endpoints = append(endpoints, dhtcclient.ListenEndpoint{Network: "udp4", Address: configuration.ListenIPv4, CachePath: configuration.RoutingTableCacheIPv4, Bootstrap: bootstrap4})
 	}
 	return endpoints
 }

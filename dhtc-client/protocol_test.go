@@ -2,13 +2,13 @@ package dhtc_client
 
 import (
 	"crypto/rand"
-	"net"
+	"net/netip"
 	"testing"
 )
 
 func TestVerifyToken(t *testing.T) {
 	p := NewProtocol("udp4", ":0", 100, ProtocolEventHandlers{})
-	addr := net.ParseIP("127.0.0.1")
+	addr := netip.MustParseAddr("127.0.0.1")
 	token := p.CalculateToken(addr)
 
 	if !p.VerifyToken(addr, token) {
@@ -16,7 +16,7 @@ func TestVerifyToken(t *testing.T) {
 	}
 
 	// Test with wrong address
-	wrongAddr := net.ParseIP("127.0.0.2")
+	wrongAddr := netip.MustParseAddr("127.0.0.2")
 	if p.VerifyToken(wrongAddr, token) {
 		t.Error("VerifyToken should fail for wrong address")
 	}
@@ -65,9 +65,9 @@ func TestFindNodeResponseAcceptsNodes6Only(t *testing.T) {
 		T: []byte("aa"),
 		R: ResponseValues{
 			ID: make([]byte, 20),
-			Nodes6: CompactNodeInfos{{
+			Nodes6: CompactNodeInfos6{{
 				ID:   make([]byte, 20),
-				Addr: net.UDPAddr{IP: net.ParseIP("2001:db8::1"), Port: 6881},
+				Addr: netip.MustParseAddrPort("[2001:db8::1]:6881"),
 			}},
 		},
 	}

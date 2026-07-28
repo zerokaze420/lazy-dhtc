@@ -130,6 +130,11 @@
 
     <form action="/settings" method="POST" class="contents">
       <input type="hidden" name="IPv6BootstrapNodeFile" value="{{ .config.IPv6BootstrapNodeFile }}" />
+      <input type="hidden" name="BootstrapNodeFileIPv6" value="{{ .config.BootstrapNodeFileIPv6 }}" />
+      <input type="hidden" name="ListenIPv4" value="{{ .config.ListenIPv4 }}" />
+      <input type="hidden" name="ListenIPv6" value="{{ .config.ListenIPv6 }}" />
+      <input type="hidden" name="RoutingTableCacheIPv4" value="{{ .config.RoutingTableCacheIPv4 }}" />
+      <input type="hidden" name="RoutingTableCacheIPv6" value="{{ .config.RoutingTableCacheIPv6 }}" />
       <!-- General Settings -->
       <div class="card bg-base-100 shadow-xl border border-base-300">
         <div class="card-body">

@@ -3,7 +3,7 @@ package dhtc_client
 import (
 	"encoding/binary"
 	"math/rand"
-	"net"
+	"net/netip"
 )
 
 func randomDigit() byte {
@@ -40,22 +40,28 @@ func randomID() []byte {
 	return append(prefix, rando...)
 }
 
-func parsePeers(s string) []net.TCPAddr {
-	var peers []net.TCPAddr
+func parsePeers(s string) []netip.AddrPort {
+	var peers []netip.AddrPort
 	for i := 0; i+6 <= len(s); i += 6 {
-		ip := net.IP(s[i : i+4])
+		ip, ok := netip.AddrFromSlice([]byte(s[i : i+4]))
+		if !ok {
+			continue
+		}
 		port := binary.BigEndian.Uint16([]byte(s[i+4 : i+6]))
-		peers = append(peers, net.TCPAddr{IP: ip, Port: int(port)})
+		peers = append(peers, netip.AddrPortFrom(ip.Unmap(), port))
 	}
 	return peers
 }
 
-func parsePeers6(s string) []net.TCPAddr {
-	var peers []net.TCPAddr
+func parsePeers6(s string) []netip.AddrPort {
+	var peers []netip.AddrPort
 	for i := 0; i+18 <= len(s); i += 18 {
-		ip := net.IP(s[i : i+16])
+		ip, ok := netip.AddrFromSlice([]byte(s[i : i+16]))
+		if !ok {
+			continue
+		}
 		port := binary.BigEndian.Uint16([]byte(s[i+16 : i+18]))
-		peers = append(peers, net.TCPAddr{IP: ip, Port: int(port)})
+		peers = append(peers, netip.AddrPortFrom(ip, port))
 	}
 	return peers
 }

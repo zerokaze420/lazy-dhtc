@@ -9,6 +9,7 @@ require (
 	github.com/gin-contrib/sessions v1.0.4
 	github.com/gin-gonic/contrib v0.0.0-20260101091603-d12f07a9136b
 	github.com/gin-gonic/gin v1.12.0
+	github.com/goccy/go-yaml v1.19.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/leekchan/gtf v0.0.0-20190214083521-5fba33c5b00b
 	github.com/ostafen/clover/v2 v2.0.0-alpha.3.0.20230927171505-aa688ad9b8b2
@@ -45,7 +46,6 @@ require (
 	github.com/go-playground/validator/v10 v10.30.1 // indirect
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
-	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gofrs/uuid/v5 v5.4.0 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/orderedcode v0.0.1 // indirect

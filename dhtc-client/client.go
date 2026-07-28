@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"net/netip"
 	"time"
 
 	"github.com/anacrolix/torrent/bencode"
@@ -21,7 +22,7 @@ const MaxMetadataSize = 10 * 1024 * 1024
 
 type Client struct {
 	infoHash []byte
-	peerAddr *net.TCPAddr
+	peerAddr netip.AddrPort
 	ev       ClientEventHandlers
 
 	conn     *net.TCPConn
@@ -36,12 +37,12 @@ type Client struct {
 }
 
 type ClientEventHandlers struct {
-	OnSuccess func(Metadata)              // must be supplied. args: metadata
-	OnError   func([]byte, error)         // must be supplied. args: infohash, error
-	OnPeers   func([]byte, []net.TCPAddr) // args: infohash, peers
+	OnSuccess func(Metadata)                 // must be supplied. args: metadata
+	OnError   func([]byte, error)            // must be supplied. args: infohash, error
+	OnPeers   func([]byte, []netip.AddrPort) // args: infohash, peers
 }
 
-func NewClient(infoHash []byte, peerAddr *net.TCPAddr, clientID []byte, ev ClientEventHandlers) *Client {
+func NewClient(infoHash []byte, peerAddr netip.AddrPort, clientID []byte, ev ClientEventHandlers) *Client {
 	l := new(Client)
 	l.infoHash = infoHash
 	l.peerAddr = peerAddr
@@ -229,7 +230,7 @@ func (c *Client) connect(deadline time.Time) error {
 	var err error
 
 	network := "tcp6"
-	if c.peerAddr.IP.To4() != nil {
+	if c.peerAddr.Addr().Is4() {
 		network = "tcp4"
 	}
 	x, err := net.DialTimeout(network, c.peerAddr.String(), 1*time.Second)

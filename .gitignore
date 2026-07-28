@@ -26,6 +26,8 @@ ui/static/css/style.css
 .lzc-cli-cache/
 dist-lpk/*.lpk
 ipv6-bootstrap-nodes.txt
+routing-table-v4.json
+routing-table-v6.json
 
 # Databases and data
 *.db

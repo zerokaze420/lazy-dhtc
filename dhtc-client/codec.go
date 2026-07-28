@@ -4,7 +4,7 @@ package dhtc_client
 import (
 	"encoding/binary"
 	"fmt"
-	"net"
+	"net/netip"
 
 	"github.com/anacrolix/missinggo/v2/iter"
 	"github.com/anacrolix/torrent/bencode"
@@ -66,9 +66,9 @@ type ResponseValues struct {
 	// ID of the responding node.
 	ID []byte `bencode:"id"`
 	// Nodes is a list of K closest nodes to the requested target (IPv4).
-	Nodes CompactNodeInfos `bencode:"nodes,omitempty"`
+	Nodes CompactNodeInfos4 `bencode:"nodes,omitempty"`
 	// Nodes6 is a list of K closest nodes to the requested target (IPv6).
-	Nodes6 CompactNodeInfos `bencode:"nodes6,omitempty"`
+	Nodes6 CompactNodeInfos6 `bencode:"nodes6,omitempty"`
 	// Token for future announce_peer.
 	Token []byte `bencode:"token,omitempty"`
 	// Values is a list of torrent peers.
@@ -97,8 +97,7 @@ type Error struct {
 
 // CompactPeer represents a peer's IP and port.
 type CompactPeer struct {
-	IP   net.IP
-	Port int
+	Addr netip.AddrPort
 }
 
 // CompactPeers is a slice of CompactPeer.
@@ -107,11 +106,14 @@ type CompactPeers []CompactPeer
 // CompactNodeInfo represents a node's ID and address.
 type CompactNodeInfo struct {
 	ID   []byte
-	Addr net.UDPAddr
+	Addr netip.AddrPort
 }
 
 // CompactNodeInfos is a slice of CompactNodeInfo.
 type CompactNodeInfos []CompactNodeInfo
+
+type CompactNodeInfos4 CompactNodeInfos
+type CompactNodeInfos6 CompactNodeInfos
 
 // UnmarshalBencode unmarshals the compact peers from bencode.
 // It supports both a list of strings and a single string.
@@ -148,32 +150,32 @@ func (cps *CompactPeers) MarshalBencode() ([]byte, error) {
 
 // MarshalBinary marshals the compact peer to binary.
 func (cp *CompactPeer) MarshalBinary() []byte {
-	ip := cp.IP.To4()
-	if ip == nil {
-		ip = cp.IP.To16()
-	}
-	if ip == nil {
+	if !cp.Addr.IsValid() {
 		return nil
 	}
+	ip := cp.Addr.Addr().AsSlice()
 	ret := make([]byte, len(ip)+2)
 	copy(ret, ip)
-	binary.BigEndian.PutUint16(ret[len(ip):], uint16(cp.Port))
+	binary.BigEndian.PutUint16(ret[len(ip):], cp.Addr.Port())
 	return ret
 }
 
 // UnmarshalBinary unmarshals the compact peer from binary.
 func (cp *CompactPeer) UnmarshalBinary(b []byte) error {
+	var ip netip.Addr
+	var ok bool
 	switch len(b) {
 	case 18:
-		cp.IP = make([]byte, 16)
+		ip, ok = netip.AddrFromSlice(b[:16])
 	case 6:
-		cp.IP = make([]byte, 4)
+		ip, ok = netip.AddrFromSlice(b[:4])
 	default:
 		return fmt.Errorf("bad compact peer string: %q", b)
 	}
-	copy(cp.IP, b)
-	b = b[len(cp.IP):]
-	cp.Port = int(binary.BigEndian.Uint16(b))
+	if !ok {
+		return fmt.Errorf("invalid compact peer address")
+	}
+	cp.Addr = netip.AddrPortFrom(ip.Unmap(), binary.BigEndian.Uint16(b[len(b)-2:]))
 	return nil
 }
 
@@ -213,6 +215,35 @@ func (cnis *CompactNodeInfos) UnmarshalBencode(b []byte) (err error) {
 	}
 	*cnis, err = UnmarshalCompactNodeInfos(bb)
 	return
+}
+
+func (cnis *CompactNodeInfos4) UnmarshalBencode(b []byte) error {
+	nodes, err := unmarshalCompactNodeInfosBencode(b, 26)
+	*cnis = CompactNodeInfos4(nodes)
+	return err
+}
+
+func (cnis *CompactNodeInfos6) UnmarshalBencode(b []byte) error {
+	nodes, err := unmarshalCompactNodeInfosBencode(b, 38)
+	*cnis = CompactNodeInfos6(nodes)
+	return err
+}
+
+func unmarshalCompactNodeInfosBencode(b []byte, nodeSize int) (CompactNodeInfos, error) {
+	var raw []byte
+	if err := bencode.Unmarshal(b, &raw); err != nil {
+		return nil, err
+	}
+	if len(raw)%nodeSize != 0 {
+		return nil, fmt.Errorf("compact node length %d is not a multiple of %d", len(raw), nodeSize)
+	}
+	nodes := make(CompactNodeInfos, len(raw)/nodeSize)
+	for i := range nodes {
+		if err := nodes[i].UnmarshalBinary(raw[i*nodeSize : (i+1)*nodeSize]); err != nil {
+			return nil, err
+		}
+	}
+	return nodes, nil
 }
 
 // UnmarshalCompactNodeInfos unmarshals the compact node infos from a byte slice.
@@ -261,11 +292,12 @@ func (cni *CompactNodeInfo) UnmarshalBinary(b []byte) error {
 		ipLen = 16
 	}
 
-	cni.Addr.IP = make([]byte, ipLen)
-	copy(cni.Addr.IP, b[:ipLen])
+	ip, ok := netip.AddrFromSlice(b[:ipLen])
+	if !ok {
+		return fmt.Errorf("invalid compact node address")
+	}
 	b = b[ipLen:]
-	cni.Addr.Port = int(binary.BigEndian.Uint16(b))
-	cni.Addr.Zone = ""
+	cni.Addr = netip.AddrPortFrom(ip.Unmap(), binary.BigEndian.Uint16(b))
 	return nil
 }
 
@@ -284,19 +316,29 @@ func (cnis *CompactNodeInfos) MarshalBencode() ([]byte, error) {
 	return bencode.Marshal(ret)
 }
 
+func (cnis CompactNodeInfos4) MarshalBencode() ([]byte, error) {
+	nodes := CompactNodeInfos(cnis)
+	return (&nodes).MarshalBencode()
+}
+
+func (cnis CompactNodeInfos6) MarshalBencode() ([]byte, error) {
+	nodes := CompactNodeInfos(cnis)
+	return (&nodes).MarshalBencode()
+}
+
 // MarshalBinary marshals the compact node info to binary.
 func (cni *CompactNodeInfo) MarshalBinary() []byte {
 	ret := make([]byte, 20)
 	copy(ret, cni.ID)
 
-	ip := cni.Addr.IP
-	if ip4 := ip.To4(); ip4 != nil {
-		ip = ip4
+	if !cni.Addr.IsValid() {
+		return nil
 	}
+	ip := cni.Addr.Addr().AsSlice()
 	ret = append(ret, ip...)
 
 	portEncoding := make([]byte, 2)
-	binary.BigEndian.PutUint16(portEncoding, uint16(cni.Addr.Port))
+	binary.BigEndian.PutUint16(portEncoding, cni.Addr.Port())
 	ret = append(ret, portEncoding...)
 
 	return ret

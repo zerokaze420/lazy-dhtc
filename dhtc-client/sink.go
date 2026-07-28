@@ -1,7 +1,7 @@
 package dhtc_client
 
 import (
-	"net"
+	"net/netip"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -16,7 +16,7 @@ func NewSink(deadline time.Duration, maxNLeeches int, maxConcurrentDownloads int
 	ms.maxConcurrentDownloads = maxConcurrentDownloads
 	ms.downloadSem = make(chan struct{}, maxConcurrentDownloads)
 	ms.drain = make(chan Metadata, 10)
-	ms.incomingInfoHashes = make(map[string][]net.TCPAddr)
+	ms.incomingInfoHashes = make(map[string][]netip.AddrPort)
 	ms.termination = make(chan any)
 
 	return ms
@@ -47,7 +47,7 @@ func (ms *Sink) Sink(res Result) {
 	}
 }
 
-func (ms *Sink) download(infoHash []byte, peer net.TCPAddr) {
+func (ms *Sink) download(infoHash []byte, peer netip.AddrPort) {
 	if ms.terminated.Load() {
 		return
 	}
@@ -55,14 +55,14 @@ func (ms *Sink) download(infoHash []byte, peer net.TCPAddr) {
 	ms.downloadSem <- struct{}{}
 	defer func() { <-ms.downloadSem }()
 
-	NewClient(infoHash, &peer, ms.PeerID, ClientEventHandlers{
+	NewClient(infoHash, peer, ms.PeerID, ClientEventHandlers{
 		OnSuccess: ms.flush,
 		OnError:   ms.onLeechError,
 		OnPeers:   ms.onPeers,
 	}).Do(time.Now().Add(ms.deadline))
 }
 
-func (ms *Sink) onPeers(infoHash []byte, peers []net.TCPAddr) {
+func (ms *Sink) onPeers(infoHash []byte, peers []netip.AddrPort) {
 	ms.incomingInfoHashesMx.Lock()
 	defer ms.incomingInfoHashesMx.Unlock()
 

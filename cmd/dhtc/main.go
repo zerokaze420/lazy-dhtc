@@ -8,6 +8,7 @@ import (
 	"dhtc/notifier"
 	"dhtc/ui"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -34,7 +35,11 @@ func ReadFileLines(filePath string) []string {
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		rVal = append(rVal, scanner.Text())
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		rVal = append(rVal, line)
 	}
 
 	return rVal
@@ -70,6 +75,10 @@ func main() {
 	database.AddToBlacklist(ReadFileLines(cfg.FileBlacklist), "1")
 
 	bootstrapNodes := ReadFileLines(cfg.BootstrapNodeFile)
+	bootstrapNodes6 := ReadFileLines(cfg.BootstrapNodeFileIPv6)
+	bootstrapNodes6 = append(bootstrapNodes6, ReadFileLines(cfg.IPv6BootstrapNodeFile)...)
+	bootstrapNodes = append(bootstrapNodes, cfg.BootstrapIPv4...)
+	bootstrapNodes6 = append(bootstrapNodes6, cfg.BootstrapIPv6...)
 
 	if len(bootstrapNodes) == 0 {
 		log.Warn().Msg("No bootstrap nodes found in '" + cfg.BootstrapNodeFile + "'.")
@@ -81,10 +90,10 @@ func main() {
 	go hub.Run()
 
 	var nManager *notifier.Manager
-	crawler := ui.NewCrawlerManager(cfg, bootstrapNodes, database, nManager, hub)
+	crawler := ui.NewCrawlerManager(cfg, bootstrapNodes, bootstrapNodes6, database, nManager, hub)
 	if !cfg.OnlyWebServer {
 		nManager = notifier.SetupNotifiers(cfg)
-		crawler = ui.NewCrawlerManager(cfg, bootstrapNodes, database, nManager, hub)
+		crawler = ui.NewCrawlerManager(cfg, bootstrapNodes, bootstrapNodes6, database, nManager, hub)
 
 		if cfg.Statistics {
 			go collectStats(database)

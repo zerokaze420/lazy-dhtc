@@ -1,7 +1,7 @@
 package dhtc_client
 
 import (
-	"net"
+	"net/netip"
 	"testing"
 )
 
@@ -9,7 +9,7 @@ func TestUnmarshalCompactNodeInfos(t *testing.T) {
 	// 20 bytes ID + 4 bytes IP + 2 bytes Port = 26 bytes
 	ipv4Node := append(make([]byte, 20), 127, 0, 0, 1, 0, 80)
 	// 20 bytes ID + 16 bytes IP + 2 bytes Port = 38 bytes
-	ipv6Node := append(make([]byte, 20), net.ParseIP("::1")...)
+	ipv6Node := append(make([]byte, 20), netip.MustParseAddr("::1").AsSlice()...)
 	ipv6Node = append(ipv6Node, 0, 80)
 
 	tests := []struct {
@@ -38,19 +38,19 @@ func TestUnmarshalCompactNodeInfos(t *testing.T) {
 			}
 			if len(got) > 0 {
 				if tt.name == "single ipv4" {
-					if !got[0].Addr.IP.Equal(net.IPv4(127, 0, 0, 1)) {
-						t.Errorf("expected 127.0.0.1, got %v", got[0].Addr.IP)
+					if got[0].Addr.Addr() != netip.MustParseAddr("127.0.0.1") {
+						t.Errorf("expected 127.0.0.1, got %v", got[0].Addr.Addr())
 					}
-					if got[0].Addr.Port != 80 {
-						t.Errorf("expected port 80, got %v", got[0].Addr.Port)
+					if got[0].Addr.Port() != 80 {
+						t.Errorf("expected port 80, got %v", got[0].Addr.Port())
 					}
 				}
 				if tt.name == "single ipv6" {
-					if !got[0].Addr.IP.Equal(net.ParseIP("::1")) {
-						t.Errorf("expected ::1, got %v", got[0].Addr.IP)
+					if got[0].Addr.Addr() != netip.MustParseAddr("::1") {
+						t.Errorf("expected ::1, got %v", got[0].Addr.Addr())
 					}
-					if got[0].Addr.Port != 80 {
-						t.Errorf("expected port 80, got %v", got[0].Addr.Port)
+					if got[0].Addr.Port() != 80 {
+						t.Errorf("expected port 80, got %v", got[0].Addr.Port())
 					}
 				}
 			}
@@ -60,11 +60,8 @@ func TestUnmarshalCompactNodeInfos(t *testing.T) {
 
 func TestCompactNodeInfo_MarshalBinary(t *testing.T) {
 	node4 := CompactNodeInfo{
-		ID: make([]byte, 20),
-		Addr: net.UDPAddr{
-			IP:   net.ParseIP("1.2.3.4"),
-			Port: 1234,
-		},
+		ID:   make([]byte, 20),
+		Addr: netip.MustParseAddrPort("1.2.3.4:1234"),
 	}
 	b4 := node4.MarshalBinary()
 	if len(b4) != 26 {
@@ -72,11 +69,8 @@ func TestCompactNodeInfo_MarshalBinary(t *testing.T) {
 	}
 
 	node6 := CompactNodeInfo{
-		ID: make([]byte, 20),
-		Addr: net.UDPAddr{
-			IP:   net.ParseIP("2001:db8::1"),
-			Port: 1234,
-		},
+		ID:   make([]byte, 20),
+		Addr: netip.MustParseAddrPort("[2001:db8::1]:1234"),
 	}
 	b6 := node6.MarshalBinary()
 	if len(b6) != 38 {
@@ -86,7 +80,7 @@ func TestCompactNodeInfo_MarshalBinary(t *testing.T) {
 
 func TestUnmarshalCompactPeers(t *testing.T) {
 	ipv4Peer := []byte{127, 0, 0, 1, 0, 80}
-	ipv6Peer := append(net.ParseIP("::1"), 0, 80)
+	ipv6Peer := append(netip.MustParseAddr("::1").AsSlice(), 0, 80)
 
 	tests := []struct {
 		name    string
@@ -116,7 +110,7 @@ func TestUnmarshalCompactPeers(t *testing.T) {
 }
 
 func TestCompactPeersBencodePreservesIPv6ItemSize(t *testing.T) {
-	peers := CompactPeers{{IP: net.ParseIP("2001:db8::1"), Port: 6881}}
+	peers := CompactPeers{{Addr: netip.MustParseAddrPort("[2001:db8::1]:6881")}}
 	b, err := peers.MarshalBencode()
 	if err != nil {
 		t.Fatal(err)
@@ -125,29 +119,29 @@ func TestCompactPeersBencodePreservesIPv6ItemSize(t *testing.T) {
 	if err := decoded.UnmarshalBencode(b); err != nil {
 		t.Fatal(err)
 	}
-	if len(decoded) != 1 || !decoded[0].IP.Equal(net.ParseIP("2001:db8::1")) {
+	if len(decoded) != 1 || decoded[0].Addr != netip.MustParseAddrPort("[2001:db8::1]:6881") {
 		t.Fatalf("unexpected decoded IPv6 peers: %#v", decoded)
 	}
 }
 
 func TestCompactPeer_UnmarshalBinary(t *testing.T) {
 	ipv4Peer := []byte{127, 0, 0, 1, 0, 80}
-	ipv6Peer := append(net.ParseIP("::1"), 0, 80)
+	ipv6Peer := append(netip.MustParseAddr("::1").AsSlice(), 0, 80)
 
 	var cp4 CompactPeer
 	if err := cp4.UnmarshalBinary(ipv4Peer); err != nil {
 		t.Errorf("ipv4 UnmarshalBinary error: %v", err)
 	}
-	if !cp4.IP.Equal(net.IPv4(127, 0, 0, 1)) {
-		t.Errorf("expected 127.0.0.1, got %v", cp4.IP)
+	if cp4.Addr != netip.MustParseAddrPort("127.0.0.1:80") {
+		t.Errorf("expected 127.0.0.1:80, got %v", cp4.Addr)
 	}
 
 	var cp6 CompactPeer
 	if err := cp6.UnmarshalBinary(ipv6Peer); err != nil {
 		t.Errorf("ipv6 UnmarshalBinary error: %v", err)
 	}
-	if !cp6.IP.Equal(net.ParseIP("::1")) {
-		t.Errorf("expected ::1, got %v", cp6.IP)
+	if cp6.Addr != netip.MustParseAddrPort("[::1]:80") {
+		t.Errorf("expected [::1]:80, got %v", cp6.Addr)
 	}
 }
 
@@ -177,8 +171,8 @@ func TestError_Bencode(t *testing.T) {
 
 func TestCompactPeers_Bencode(t *testing.T) {
 	cps := CompactPeers{
-		{IP: net.ParseIP("1.2.3.4"), Port: 1234},
-		{IP: net.ParseIP("2001:db8::1"), Port: 5678},
+		{Addr: netip.MustParseAddrPort("1.2.3.4:1234")},
+		{Addr: netip.MustParseAddrPort("[2001:db8::1]:5678")},
 	}
 
 	b, err := cps.MarshalBencode()
@@ -197,8 +191,8 @@ func TestCompactPeers_Bencode(t *testing.T) {
 
 	// Test unmarshal from single string (IPv4 only to avoid ambiguity)
 	cps4 := CompactPeers{
-		{IP: net.ParseIP("1.2.3.4"), Port: 1234},
-		{IP: net.ParseIP("5.6.7.8"), Port: 5678},
+		{Addr: netip.MustParseAddrPort("1.2.3.4:1234")},
+		{Addr: netip.MustParseAddrPort("5.6.7.8:5678")},
 	}
 	singleString := append(cps4[0].MarshalBinary(), cps4[1].MarshalBinary()...)
 	// Manually bencode a string

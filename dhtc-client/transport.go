@@ -3,23 +3,25 @@ package dhtc_client
 import (
 	"context"
 	"net"
+	"net/netip"
 	"sync"
 
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 )
 
 type sendRequest struct {
 	msg  *Message
-	addr *net.UDPAddr
+	addr netip.AddrPort
 }
 
 // Transport represents a DHT transport layer.
 type Transport struct {
 	network string
-	fd      *net.UDPConn
-	laddr   *net.UDPAddr
+	fd      net.PacketConn
+	laddr   string
 	started bool
 	buffer  []byte
 
@@ -27,17 +29,20 @@ type Transport struct {
 	sendChan chan sendRequest
 	done     chan struct{}
 	stopOnce sync.Once
+	ctx      context.Context
+	cancel   context.CancelFunc
+	group    *errgroup.Group
 
 	// OnMessage is the function that will be called when Transport receives a packet that is
 	// successfully unmarshalled as a syntactically correct Message (but, of course, checking
 	// the semantic correctness of the Message is left to Protocol).
-	onMessage func(*Message, *net.UDPAddr)
+	onMessage func(*Message, netip.AddrPort)
 	// OnCongestion
 	onCongestion func()
 }
 
 // NewTransport creates a new DHT transport layer.
-func NewTransport(network string, laddr string, rateLimit int, onMessage func(*Message, *net.UDPAddr), onCongestion func()) *Transport {
+func NewTransport(network string, laddr string, rateLimit int, onMessage func(*Message, netip.AddrPort), onCongestion func()) *Transport {
 	t := new(Transport)
 	t.network = network
 	/*   The field size sets a theoretical limit of 65,535 bytes (8 byte header + 65,527 bytes of
@@ -61,18 +66,13 @@ func NewTransport(network string, laddr string, rateLimit int, onMessage func(*M
 	t.sendChan = make(chan sendRequest, 2048)
 	t.done = make(chan struct{})
 
-	var err error
-	t.laddr, err = net.ResolveUDPAddr(network, laddr)
-	if err != nil {
-		log.Panic().Msg("Could not resolve the UDP address for the trawler!")
-		log.Panic().Err(err)
-	}
+	t.laddr = laddr
 
 	return t
 }
 
 // Start starts the DHT transport layer.
-func (t *Transport) Start() {
+func (t *Transport) Start(parent context.Context) {
 	// Why check whether the Transport `t` started or not, here and not -for instance- in
 	// t.Terminate()?
 	// Because in t.Terminate() the programmer (i.e. you & me) would stumble upon an error while
@@ -85,37 +85,45 @@ func (t *Transport) Start() {
 		log.Panic().Msg("Attempting to Start() a mainline/Transport that has been already started! (Programmer error.)")
 	}
 	t.started = true
+	t.ctx, t.cancel = context.WithCancel(parent)
+	t.group, t.ctx = errgroup.WithContext(t.ctx)
 
 	var err error
-	t.fd, err = net.ListenUDP(t.network, t.laddr)
+	t.fd, err = net.ListenPacket(t.network, t.laddr)
 
 	if err != nil {
 		log.Fatal().Msg("Could NOT bind the socket!")
 		log.Fatal().Err(err)
 	}
 
-	go t.readMessages()
-	go t.sendLoop()
+	t.group.Go(t.readMessages)
+	t.group.Go(t.sendLoop)
 }
 
 // Terminate terminates the DHT transport layer.
 func (t *Transport) Terminate() {
 	t.stopOnce.Do(func() {
 		close(t.done)
+		if t.cancel != nil {
+			t.cancel()
+		}
 		if t.fd != nil {
 			_ = t.fd.Close()
+		}
+		if t.group != nil {
+			_ = t.group.Wait()
 		}
 	})
 }
 
 // readMessages is a goroutine!
-func (t *Transport) readMessages() {
+func (t *Transport) readMessages() error {
 	for {
-		n, fromSA, err := t.fd.ReadFromUDP(t.buffer)
+		n, fromSA, err := t.fd.ReadFrom(t.buffer)
 		if err != nil {
 			select {
 			case <-t.done:
-				return
+				return nil
 			default:
 				log.Warn().Err(err).Msg("Could NOT read an UDP packet!")
 				continue
@@ -136,12 +144,16 @@ func (t *Transport) readMessages() {
 			continue
 		}
 
-		t.onMessage(&msg, fromSA)
+		addr, err := netip.ParseAddrPort(fromSA.String())
+		if err != nil {
+			continue
+		}
+		t.onMessage(&msg, addr)
 	}
 }
 
 // WriteMessages writes a KRPC message to the specified address.
-func (t *Transport) WriteMessages(msg *Message, addr *net.UDPAddr) {
+func (t *Transport) WriteMessages(msg *Message, addr netip.AddrPort) {
 	select {
 	case <-t.done:
 		return
@@ -151,15 +163,15 @@ func (t *Transport) WriteMessages(msg *Message, addr *net.UDPAddr) {
 	}
 }
 
-func (t *Transport) sendLoop() {
+func (t *Transport) sendLoop() error {
 	for {
 		select {
 		case <-t.done:
-			return
+			return nil
 		case req := <-t.sendChan:
 			select {
 			case <-t.done:
-				return
+				return nil
 			default:
 			}
 			t.send(req)
@@ -168,18 +180,8 @@ func (t *Transport) sendLoop() {
 }
 
 func (t *Transport) send(req sendRequest) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	if t.limiter != nil {
-		go func() {
-			select {
-			case <-t.done:
-				cancel()
-			case <-ctx.Done():
-			}
-		}()
-		if err := t.limiter.Wait(ctx); err != nil {
+		if err := t.limiter.Wait(t.ctx); err != nil {
 			return
 		}
 	}
@@ -192,13 +194,13 @@ func (t *Transport) send(req sendRequest) {
 	}
 }
 
-func (t *Transport) writeImmediately(msg *Message, addr *net.UDPAddr) {
+func (t *Transport) writeImmediately(msg *Message, addr netip.AddrPort) {
 	data, err := bencode.Marshal(msg)
 	if err != nil {
 		log.Panic().Msg("Could NOT marshal an outgoing message! (Programmer error.)")
 	}
 
-	_, err = t.fd.WriteToUDP(data, addr)
+	_, err = t.fd.WriteTo(data, net.UDPAddrFromAddrPort(addr))
 	if err != nil {
 		select {
 		case <-t.done:

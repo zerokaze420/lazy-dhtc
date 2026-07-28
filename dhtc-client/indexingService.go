@@ -1,15 +1,19 @@
 package dhtc_client
 
 import (
-	"container/list"
 	"context"
 	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"net"
+	"net/netip"
+	"os"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 )
 
 type IndexingService struct {
@@ -17,45 +21,45 @@ type IndexingService struct {
 	protocol      *Protocol
 	network       string
 	want          []string
+	cachePath     string
 	started       bool
 	interval      time.Duration
 	eventHandlers IndexingServiceEventHandlers
 	done          chan struct{}
 	stopOnce      sync.Once
+	ctx           context.Context
+	cancel        context.CancelFunc
+	group         *errgroup.Group
 
-	nodeID            []byte
-	routingTable      map[string]*net.UDPAddr
-	lastSeen          map[string]time.Time
-	lruList           *list.List
-	lruElements       map[string]*list.Element
-	routingTableMutex sync.RWMutex
-	maxNeighbors      uint
+	nodeID       []byte
+	routingTable *RoutingTable
 
 	counter          uint16
 	getPeersRequests map[[2]byte][]byte // GetPeersQuery.`t` -> infohash
+	requestsMu       sync.Mutex
 }
 
 type IndexingServiceEventHandlers struct {
 	OnResult func(IndexingResult)
-	OnNodes6 func(CompactNodeInfos)
 }
 
 type IndexingResult struct {
 	infoHash  []byte
-	peerAddrs []net.TCPAddr
+	peerAddrs []netip.AddrPort
 }
 
 func (ir IndexingResult) InfoHash() []byte {
 	return ir.infoHash
 }
 
-func (ir IndexingResult) PeerAddrs() []net.TCPAddr {
+func (ir IndexingResult) PeerAddrs() []netip.AddrPort {
 	return ir.peerAddrs
 }
 
-func NewIndexingService(network string, laddr string, interval time.Duration, maxNeighbors uint, rateLimit int, eventHandlers IndexingServiceEventHandlers) *IndexingService {
+func NewIndexingService(network string, laddr string, cachePath string, interval time.Duration, maxNeighbors uint, rateLimit int, eventHandlers IndexingServiceEventHandlers) *IndexingService {
 	service := new(IndexingService)
 	service.network = network
+	service.cachePath = cachePath
 	if network == "udp6" {
 		service.want = []string{"n6"}
 	} else {
@@ -67,6 +71,10 @@ func NewIndexingService(network string, laddr string, interval time.Duration, ma
 		laddr,
 		rateLimit,
 		ProtocolEventHandlers{
+			OnPingQuery:                service.onPingQuery,
+			OnFindNodeQuery:            service.onFindNodeQuery,
+			OnGetPeersQuery:            service.onGetPeersQuery,
+			OnAnnouncePeerQuery:        service.onAnnouncePeerQuery,
 			OnFindNodeResponse:         service.onFindNodeResponse,
 			OnGetPeersResponse:         service.onGetPeersResponse,
 			OnSampleInfohashesResponse: service.onSampleInfohashesResponse,
@@ -74,11 +82,10 @@ func NewIndexingService(network string, laddr string, interval time.Duration, ma
 		},
 	)
 	service.nodeID = make([]byte, 20)
-	service.routingTable = make(map[string]*net.UDPAddr)
-	service.lastSeen = make(map[string]time.Time)
-	service.lruList = list.New()
-	service.lruElements = make(map[string]*list.Element)
-	service.maxNeighbors = maxNeighbors
+	if _, err := rand.Read(service.nodeID); err != nil {
+		log.Fatal().Err(err).Msg("Could not generate DHT node ID")
+	}
+	service.routingTable = NewRoutingTable(service.nodeID, maxNeighbors)
 	service.eventHandlers = eventHandlers
 	service.done = make(chan struct{})
 
@@ -87,20 +94,80 @@ func NewIndexingService(network string, laddr string, interval time.Duration, ma
 	return service
 }
 
-func (is *IndexingService) Start(nodes []string) {
+func (is *IndexingService) responseNodes(target []byte, limit int) (CompactNodeInfos, CompactNodeInfos) {
+	nodes4 := make(CompactNodeInfos, 0, limit)
+	nodes6 := make(CompactNodeInfos, 0, limit)
+	for _, entry := range is.routingTable.Closest(target, limit) {
+		node := CompactNodeInfo{ID: append([]byte(nil), entry.ID[:]...), Addr: entry.Addr}
+		if entry.Addr.Addr().Is4() {
+			nodes4 = append(nodes4, node)
+		} else {
+			nodes6 = append(nodes6, node)
+		}
+		if len(nodes4)+len(nodes6) >= limit {
+			break
+		}
+	}
+	return nodes4, nodes6
+}
+
+func (is *IndexingService) onPingQuery(msg *Message, addr netip.AddrPort) {
+	is.addNode(msg.A.ID, addr)
+	is.protocol.SendMessage(NewBasicResponse(msg.T, is.nodeID), addr)
+}
+
+func (is *IndexingService) onFindNodeQuery(msg *Message, addr netip.AddrPort) {
+	is.addNode(msg.A.ID, addr)
+	nodes4, nodes6 := is.responseNodes(msg.A.Target, 8)
+	is.protocol.SendMessage(NewNodeResponse(msg.T, is.nodeID, nodes4, nodes6), addr)
+}
+
+func (is *IndexingService) onGetPeersQuery(msg *Message, addr netip.AddrPort) {
+	is.addNode(msg.A.ID, addr)
+	nodes4, nodes6 := is.responseNodes(msg.A.InfoHash, 8)
+	token := is.protocol.CalculateToken(addr.Addr())
+	is.protocol.SendMessage(NewGetPeersResponse(msg.T, is.nodeID, token, nodes4, nodes6), addr)
+}
+
+func (is *IndexingService) onAnnouncePeerQuery(msg *Message, addr netip.AddrPort) {
+	if !is.protocol.VerifyToken(addr.Addr(), msg.A.Token) {
+		return
+	}
+	port := uint16(msg.A.Port)
+	if msg.A.ImpliedPort != 0 {
+		port = addr.Port()
+	}
+	peer := netip.AddrPortFrom(addr.Addr(), port)
+	if is.eventHandlers.OnResult != nil {
+		is.eventHandlers.OnResult(IndexingResult{infoHash: append([]byte(nil), msg.A.InfoHash...), peerAddrs: []netip.AddrPort{peer}})
+	}
+	is.protocol.SendMessage(NewBasicResponse(msg.T, is.nodeID), addr)
+}
+
+func (is *IndexingService) Start(parent context.Context, nodes []string) {
 	if is.started {
 		log.Panic().Msg("Attempting to Start() a mainline/IndexingService that has been already started! (Programmer error.)")
 	}
 	is.started = true
+	is.ctx, is.cancel = context.WithCancel(parent)
+	is.group, is.ctx = errgroup.WithContext(is.ctx)
 
-	is.protocol.Start()
-	go is.index(nodes)
+	is.loadRoutingTable()
+	is.protocol.Start(is.ctx)
+	is.group.Go(func() error { is.index(nodes); return nil })
 }
 
 func (is *IndexingService) Terminate() {
 	is.stopOnce.Do(func() {
 		close(is.done)
+		if is.cancel != nil {
+			is.cancel()
+		}
 		is.protocol.Terminate()
+		if is.group != nil {
+			_ = is.group.Wait()
+		}
+		is.saveRoutingTable()
 	})
 }
 
@@ -110,42 +177,81 @@ func (is *IndexingService) index(nodes []string) {
 
 	for {
 		select {
+		case <-is.ctx.Done():
+			return
 		case <-is.done:
 			return
 		case <-ticker.C:
 		}
 
-		is.routingTableMutex.RLock()
-		routingTableLen := len(is.routingTable)
-		is.routingTableMutex.RUnlock()
+		routingTableLen := is.routingTable.Len()
 
-		if routingTableLen == 0 {
+		if routingTableLen < 8 {
 			is.bootstrap(nodes)
-		} else {
+		}
+		if routingTableLen > 0 {
 			is.findNeighbors()
 
-			// Prune dead nodes
-			is.routingTableMutex.Lock()
-			for {
-				back := is.lruList.Back()
-				if back == nil {
-					break
-				}
-				id, _ := back.Value.(string)
-				seen := is.lastSeen[id]
-				if time.Since(seen) > 5*time.Minute {
-					is.lruList.Remove(back)
-					delete(is.lruElements, id)
-					delete(is.routingTable, id)
-					delete(is.lastSeen, id)
-				} else {
-					break
-				}
-			}
-
-			is.routingTableMutex.Unlock()
+			is.routingTable.Prune(time.Now().Add(-5 * time.Minute))
 		}
 	}
+}
+
+type routingCacheEntry struct {
+	ID       string `json:"id"`
+	Address  string `json:"address"`
+	LastSeen int64  `json:"last_seen"`
+}
+
+func (is *IndexingService) loadRoutingTable() {
+	data, err := os.ReadFile(is.cachePath)
+	if err != nil {
+		return
+	}
+	var entries []routingCacheEntry
+	if json.Unmarshal(data, &entries) != nil {
+		return
+	}
+	for _, entry := range entries {
+		id, err := hex.DecodeString(entry.ID)
+		if err != nil || len(id) != 20 {
+			continue
+		}
+		addr, err := netip.ParseAddrPort(entry.Address)
+		if err != nil {
+			continue
+		}
+		seen := time.Unix(entry.LastSeen, 0)
+		if entry.LastSeen <= 0 {
+			seen = time.Now()
+		}
+		if is.acceptsAddress(addr) {
+			is.routingTable.Add(id, addr, seen)
+		}
+	}
+	log.Info().Str("network", is.network).Int("nodes", is.routingTableSize()).Msg("Restored DHT routing table")
+}
+
+func (is *IndexingService) saveRoutingTable() {
+	if is.cachePath == "" {
+		return
+	}
+	nodes := is.routingTable.Snapshot()
+	entries := make([]routingCacheEntry, 0, len(nodes))
+	for _, node := range nodes {
+		entries = append(entries, routingCacheEntry{ID: hex.EncodeToString(node.ID[:]), Address: node.Addr.String(), LastSeen: node.LastSeen.Unix()})
+	}
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return
+	}
+	if err := os.WriteFile(is.cachePath, data, 0600); err != nil {
+		log.Warn().Err(err).Str("path", is.cachePath).Msg("Could not persist DHT routing table")
+	}
+}
+
+func (is *IndexingService) routingTableSize() int {
+	return is.routingTable.Len()
 }
 
 func (is *IndexingService) bootstrap(nodes []string) {
@@ -179,17 +285,11 @@ func (is *IndexingService) findNeighbors() {
 
 	target := make([]byte, 20)
 
-	/*
-		We could just RLock and defer RUnlock here, but that would mean that each response that we get could not Lock
-		the table because we are sending. So we would basically make read and write NOT concurrent.
-		A better approach would be to get all addresses to send in a slice and then work on that, releasing the main map.
-	*/
-	is.routingTableMutex.RLock()
-	addressesToSend := make([]*net.UDPAddr, 0, len(is.routingTable))
-	for _, addr := range is.routingTable {
-		addressesToSend = append(addressesToSend, addr)
+	nodes := is.routingTable.Snapshot()
+	addressesToSend := make([]netip.AddrPort, 0, len(nodes))
+	for _, node := range nodes {
+		addressesToSend = append(addressesToSend, node.Addr)
 	}
-	is.routingTableMutex.RUnlock()
 
 	for _, addr := range addressesToSend {
 		if is.stopped() {
@@ -208,43 +308,17 @@ func (is *IndexingService) findNeighbors() {
 	}
 }
 
-func (is *IndexingService) addNode(id []byte, addr *net.UDPAddr) {
+func (is *IndexingService) addNode(id []byte, addr netip.AddrPort) {
 	if is.stopped() {
 		return
 	}
 
-	if addr.Port == 0 {
+	if !is.acceptsAddress(addr) {
 		return
 	}
-	is4 := addr.IP.To4() != nil
-	if (is.network == "udp4" && !is4) || (is.network == "udp6" && is4) {
+	if !is.routingTable.Add(id, addr, time.Now()) {
 		return
 	}
-
-	is.routingTableMutex.Lock()
-	defer is.routingTableMutex.Unlock()
-
-	sid := string(id)
-	if _, exists := is.routingTable[sid]; exists {
-		is.lastSeen[sid] = time.Now()
-		is.lruList.MoveToFront(is.lruElements[sid])
-		return
-	}
-
-	if uint(len(is.routingTable)) >= is.maxNeighbors {
-		back := is.lruList.Back()
-		if back != nil {
-			oldestID, _ := back.Value.(string)
-			is.lruList.Remove(back)
-			delete(is.lruElements, oldestID)
-			delete(is.routingTable, oldestID)
-			delete(is.lastSeen, oldestID)
-		}
-	}
-
-	is.routingTable[sid] = addr
-	is.lastSeen[sid] = time.Now()
-	is.lruElements[sid] = is.lruList.PushFront(sid)
 
 	target := make([]byte, 20)
 	_, err := rand.Read(target)
@@ -257,7 +331,7 @@ func (is *IndexingService) addNode(id []byte, addr *net.UDPAddr) {
 	)
 }
 
-func (is *IndexingService) onFindNodeResponse(response *Message, addr *net.UDPAddr) {
+func (is *IndexingService) onFindNodeResponse(response *Message, addr netip.AddrPort) {
 	if is.stopped() {
 		return
 	}
@@ -265,15 +339,14 @@ func (is *IndexingService) onFindNodeResponse(response *Message, addr *net.UDPAd
 	is.addNode(response.R.ID, addr)
 
 	for _, node := range response.R.Nodes {
-		is.addNode(node.ID, &node.Addr)
+		is.addNode(node.ID, node.Addr)
 	}
 	for _, node := range response.R.Nodes6 {
-		is.addNode(node.ID, &node.Addr)
+		is.addNode(node.ID, node.Addr)
 	}
-	is.reportNodes6(response.R.Nodes6)
 }
 
-func (is *IndexingService) onGetPeersResponse(msg *Message, addr *net.UDPAddr) {
+func (is *IndexingService) onGetPeersResponse(msg *Message, addr netip.AddrPort) {
 	if is.stopped() {
 		return
 	}
@@ -283,9 +356,13 @@ func (is *IndexingService) onGetPeersResponse(msg *Message, addr *net.UDPAddr) {
 	var t [2]byte
 	copy(t[:], msg.T)
 
+	is.requestsMu.Lock()
 	infoHash := is.getPeersRequests[t]
-	// We got a response, so free the key!
 	delete(is.getPeersRequests, t)
+	is.requestsMu.Unlock()
+	if len(infoHash) == 0 {
+		return
+	}
 
 	// BEP 51 specifies that
 	//     The new sample_infohashes remote procedure call requests that a remote node return a string of multiple
@@ -296,16 +373,12 @@ func (is *IndexingService) onGetPeersResponse(msg *Message, addr *net.UDPAddr) {
 		return
 	}
 
-	peerAddrs := make([]net.TCPAddr, 0)
+	peerAddrs := make([]netip.AddrPort, 0)
 	for _, peer := range msg.R.Values {
-		if peer.Port == 0 {
+		if !peer.Addr.IsValid() || peer.Addr.Port() == 0 {
 			continue
 		}
-
-		peerAddrs = append(peerAddrs, net.TCPAddr{
-			IP:   peer.IP,
-			Port: peer.Port,
-		})
+		peerAddrs = append(peerAddrs, peer.Addr)
 	}
 
 	is.eventHandlers.OnResult(IndexingResult{
@@ -314,7 +387,7 @@ func (is *IndexingService) onGetPeersResponse(msg *Message, addr *net.UDPAddr) {
 	})
 }
 
-func (is *IndexingService) onSampleInfohashesResponse(msg *Message, addr *net.UDPAddr) {
+func (is *IndexingService) onSampleInfohashesResponse(msg *Message, addr netip.AddrPort) {
 	if is.stopped() {
 		return
 	}
@@ -335,75 +408,55 @@ func (is *IndexingService) onSampleInfohashesResponse(msg *Message, addr *net.UD
 	}
 
 	for _, node := range msg.R.Nodes {
-		is.addNode(node.ID, &node.Addr)
+		is.addNode(node.ID, node.Addr)
 	}
 
 	for _, node := range msg.R.Nodes6 {
-		is.addNode(node.ID, &node.Addr)
-	}
-	is.reportNodes6(msg.R.Nodes6)
-}
-
-func (is *IndexingService) AddNodes(nodes CompactNodeInfos) {
-	for _, node := range nodes {
-		is.addNode(node.ID, &node.Addr)
+		is.addNode(node.ID, node.Addr)
 	}
 }
 
-func (is *IndexingService) reportNodes6(nodes CompactNodeInfos) {
-	if len(nodes) > 0 && is.eventHandlers.OnNodes6 != nil {
-		is.eventHandlers.OnNodes6(nodes)
-	}
-}
-
-func (is *IndexingService) requestPeers(infoHash []byte, addr *net.UDPAddr) {
+func (is *IndexingService) requestPeers(infoHash []byte, addr netip.AddrPort) {
 	if is.stopped() {
 		return
 	}
 
-	msg := NewGetPeersQuery(is.nodeID, infoHash, is.want)
-	t := uint16BE(is.counter)
-	msg.T = t[:]
-
-	is.protocol.SendMessage(msg, addr)
-
-	is.getPeersRequests[t] = infoHash
-	is.counter++
-}
-
-func (is *IndexingService) onSampleInfohashesQuery(msg *Message, addr *net.UDPAddr) {
-	if is.stopped() {
-		return
-	}
-
-	is.routingTableMutex.RLock()
-	// Get some nodes from routing table
-	nodes := make(CompactNodeInfos, 0)
-	for id, addr := range is.routingTable {
-		nodes = append(nodes, CompactNodeInfo{
-			ID:   []byte(id),
-			Addr: *addr,
-		})
-		if len(nodes) >= 8 {
+	is.requestsMu.Lock()
+	var t [2]byte
+	for {
+		t = uint16BE(is.counter)
+		is.counter++
+		if _, exists := is.getPeersRequests[t]; !exists {
 			break
 		}
 	}
-	is.routingTableMutex.RUnlock()
+	is.getPeersRequests[t] = append([]byte(nil), infoHash...)
+	is.requestsMu.Unlock()
 
-	nodes4 := make(CompactNodeInfos, 0, len(nodes))
-	nodes6 := make(CompactNodeInfos, 0, len(nodes))
-	for _, node := range nodes {
-		if node.Addr.IP.To4() == nil {
-			nodes6 = append(nodes6, node)
-		} else {
-			nodes4 = append(nodes4, node)
-		}
+	msg := NewGetPeersQuery(is.nodeID, infoHash, is.want)
+	msg.T = t[:]
+	is.protocol.SendMessage(msg, addr)
+}
+
+func (is *IndexingService) onSampleInfohashesQuery(msg *Message, addr netip.AddrPort) {
+	if is.stopped() {
+		return
 	}
+
+	nodes4, nodes6 := is.responseNodes(msg.A.Target, 8)
 	response := NewSampleInfohashesResponse(msg.T, is.nodeID, int(is.interval.Seconds()), nodes4, nodes6, 0, nil)
 	is.protocol.SendMessage(response, addr)
 }
 
-func resolveBootstrapAddresses(network, node string) ([]*net.UDPAddr, error) {
+func (is *IndexingService) acceptsAddress(addr netip.AddrPort) bool {
+	if !addr.IsValid() || addr.Port() == 0 {
+		return false
+	}
+	is4 := addr.Addr().Is4()
+	return (is.network == "udp4" && is4) || (is.network == "udp6" && !is4)
+}
+
+func resolveBootstrapAddresses(network, node string) ([]netip.AddrPort, error) {
 	host, portText, err := net.SplitHostPort(node)
 	if err != nil {
 		return nil, err
@@ -417,13 +470,18 @@ func resolveBootstrapAddresses(network, node string) ([]*net.UDPAddr, error) {
 	if err != nil {
 		return nil, err
 	}
-	addrs := make([]*net.UDPAddr, 0, len(ips))
+	addrs := make([]netip.AddrPort, 0, len(ips))
 	for _, ip := range ips {
-		is4 := ip.To4() != nil
+		addr, ok := netip.AddrFromSlice(ip)
+		if !ok {
+			continue
+		}
+		addr = addr.Unmap()
+		is4 := addr.Is4()
 		if (network == "udp4" && !is4) || (network == "udp6" && is4) {
 			continue
 		}
-		addrs = append(addrs, &net.UDPAddr{IP: ip, Port: port})
+		addrs = append(addrs, netip.AddrPortFrom(addr, uint16(port)))
 	}
 	return addrs, nil
 }

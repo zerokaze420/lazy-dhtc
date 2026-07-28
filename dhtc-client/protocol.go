@@ -2,9 +2,10 @@ package dhtc_client
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha1"
-	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -18,29 +19,32 @@ type Protocol struct {
 	transport                               *Transport
 	eventHandlers                           ProtocolEventHandlers
 	started                                 bool
+	ctx                                     context.Context
+	cancel                                  context.CancelFunc
+	wg                                      sync.WaitGroup
 }
 
 // ProtocolEventHandlers contains the callback functions for various DHT events.
 type ProtocolEventHandlers struct {
 	// OnPingQuery is called when a ping query is received.
-	OnPingQuery func(*Message, *net.UDPAddr)
+	OnPingQuery func(*Message, netip.AddrPort)
 	// OnFindNodeQuery is called when a find_node query is received.
-	OnFindNodeQuery func(*Message, *net.UDPAddr)
+	OnFindNodeQuery func(*Message, netip.AddrPort)
 	// OnGetPeersQuery is called when a get_peers query is received.
-	OnGetPeersQuery func(*Message, *net.UDPAddr)
+	OnGetPeersQuery func(*Message, netip.AddrPort)
 	// OnAnnouncePeerQuery is called when an announce_peer query is received.
-	OnAnnouncePeerQuery func(*Message, *net.UDPAddr)
+	OnAnnouncePeerQuery func(*Message, netip.AddrPort)
 	// OnGetPeersResponse is called when a get_peers response is received.
-	OnGetPeersResponse func(*Message, *net.UDPAddr)
+	OnGetPeersResponse func(*Message, netip.AddrPort)
 	// OnFindNodeResponse is called when a find_node response is received.
-	OnFindNodeResponse func(*Message, *net.UDPAddr)
+	OnFindNodeResponse func(*Message, netip.AddrPort)
 	// OnPingORAnnouncePeerResponse is called when a ping or announce_peer response is received.
-	OnPingORAnnouncePeerResponse func(*Message, *net.UDPAddr)
+	OnPingORAnnouncePeerResponse func(*Message, netip.AddrPort)
 
 	// OnSampleInfohashesQuery is called when a sample_infohashes query is received (BEP 51).
-	OnSampleInfohashesQuery func(*Message, *net.UDPAddr)
+	OnSampleInfohashesQuery func(*Message, netip.AddrPort)
 	// OnSampleInfohashesResponse is called when a sample_infohashes response is received (BEP 51).
-	OnSampleInfohashesResponse func(*Message, *net.UDPAddr)
+	OnSampleInfohashesResponse func(*Message, netip.AddrPort)
 
 	// OnCongestion is called when congestion is detected.
 	OnCongestion func()
@@ -64,14 +68,19 @@ func NewProtocol(network string, laddr string, rateLimit int, eventHandlers Prot
 }
 
 // Start starts the DHT protocol handler.
-func (p *Protocol) Start() {
+func (p *Protocol) Start(ctx context.Context) {
 	if p.started {
 		log.Panic().Msg("Attempting to Start() a mainline/Protocol that has been already started! (Programmer error.)")
 	}
 	p.started = true
+	p.ctx, p.cancel = context.WithCancel(ctx)
 
-	p.transport.Start()
-	go p.updateTokenSecret()
+	p.transport.Start(p.ctx)
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		p.updateTokenSecret(p.ctx)
+	}()
 }
 
 // Terminate terminates the DHT protocol handler.
@@ -81,10 +90,14 @@ func (p *Protocol) Terminate() {
 	}
 
 	p.started = false
+	if p.cancel != nil {
+		p.cancel()
+	}
 	p.transport.Terminate()
+	p.wg.Wait()
 }
 
-func (p *Protocol) onMessage(msg *Message, addr *net.UDPAddr) {
+func (p *Protocol) onMessage(msg *Message, addr netip.AddrPort) {
 	switch msg.Y {
 	case "q":
 		switch msg.Q {
@@ -204,7 +217,7 @@ func (p *Protocol) onMessage(msg *Message, addr *net.UDPAddr) {
 }
 
 // SendMessage sends a KRPC message to the specified address.
-func (p *Protocol) SendMessage(msg *Message, addr *net.UDPAddr) {
+func (p *Protocol) SendMessage(msg *Message, addr netip.AddrPort) {
 	if !p.started {
 		return
 	}
@@ -261,38 +274,57 @@ func NewSampleInfohashesResponse(t []byte, id []byte, interval int, nodes Compac
 		R: ResponseValues{
 			ID:       id,
 			Interval: interval,
-			Nodes:    nodes,
-			Nodes6:   nodes6,
+			Nodes:    CompactNodeInfos4(nodes),
+			Nodes6:   CompactNodeInfos6(nodes6),
 			Num:      num,
 			Samples:  samples,
 		},
 	}
 }
 
+func NewNodeResponse(t, id []byte, nodes, nodes6 CompactNodeInfos) *Message {
+	return &Message{Y: "r", T: t, R: ResponseValues{ID: id, Nodes: CompactNodeInfos4(nodes), Nodes6: CompactNodeInfos6(nodes6)}}
+}
+
+func NewGetPeersResponse(t, id, token []byte, nodes, nodes6 CompactNodeInfos) *Message {
+	return &Message{Y: "r", T: t, R: ResponseValues{ID: id, Token: token, Nodes: CompactNodeInfos4(nodes), Nodes6: CompactNodeInfos6(nodes6)}}
+}
+
+func NewBasicResponse(t, id []byte) *Message {
+	return &Message{Y: "r", T: t, R: ResponseValues{ID: id}}
+}
+
 // CalculateToken calculates a token for the specified address.
-func (p *Protocol) CalculateToken(address net.IP) []byte {
+func (p *Protocol) CalculateToken(address netip.Addr) []byte {
 	p.tokenLock.Lock()
 	defer p.tokenLock.Unlock()
-	sum := sha1.Sum(append(p.currentTokenSecret, address...))
+	sum := sha1.Sum(append(p.currentTokenSecret, address.AsSlice()...))
 	return sum[:]
 }
 
 // VerifyToken verifies the token for the specified address.
-func (p *Protocol) VerifyToken(address net.IP, token []byte) bool {
+func (p *Protocol) VerifyToken(address netip.Addr, token []byte) bool {
 	p.tokenLock.Lock()
 	defer p.tokenLock.Unlock()
 
-	sum := sha1.Sum(append(p.currentTokenSecret, address...))
+	sum := sha1.Sum(append(p.currentTokenSecret, address.AsSlice()...))
 	if bytes.Equal(sum[:], token) {
 		return true
 	}
 
-	sum = sha1.Sum(append(p.previousTokenSecret, address...))
+	sum = sha1.Sum(append(p.previousTokenSecret, address.AsSlice()...))
 	return bytes.Equal(sum[:], token)
 }
 
-func (p *Protocol) updateTokenSecret() {
-	for range time.Tick(10 * time.Minute) {
+func (p *Protocol) updateTokenSecret(ctx context.Context) {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		p.tokenLock.Lock()
 		copy(p.previousTokenSecret, p.currentTokenSecret)
 		_, err := rand.Read(p.currentTokenSecret)
