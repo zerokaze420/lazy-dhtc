@@ -279,7 +279,12 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
 	log.Info().Bool("enabled", mode != config.NetworkModeIPv4).Msg("IPv6 DHT")
 
 	trawlingManager := dhtcclient.NewManager(endpoints, 10*time.Second, m.configuration.MaxNeighbors, m.configuration.RateLimit)
-	metadataSink := dhtcclient.NewSink(m.configuration.DrainTimeout, m.configuration.MaxLeeches, m.configuration.MaxConcurrentDownloads)
+	metadataSink := dhtcclient.NewSink(
+		m.configuration.DrainTimeout,
+		m.configuration.MaxLeeches,
+		m.configuration.MaxConcurrentDownloads,
+		func(infoHash []byte) { cache.InfoHashCacheRemove(string(infoHash)) },
+	)
 	defer trawlingManager.Terminate()
 	defer metadataSink.Terminate()
 
@@ -290,14 +295,19 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
 		case result := <-trawlingManager.Output():
 			hash := result.InfoHash()
 			if cache.InfoHashCacheAdd(string(hash)) {
-				metadataSink.Sink(result)
+				if !metadataSink.Sink(result) {
+					cache.InfoHashCacheRemove(string(hash))
+				}
 			}
 		case md, ok := <-metadataSink.Drain():
 			if !ok {
 				return
 			}
 			if m.onMetadata != nil {
-				m.onMetadata(md)
+				accepted := m.onMetadata(md)
+				if m.database == nil && !accepted {
+					cache.InfoHashCacheRemove(string(md.InfoHash))
+				}
 			}
 		}
 	}

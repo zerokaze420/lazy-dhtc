@@ -7,7 +7,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func NewSink(deadline time.Duration, maxNLeeches int, maxConcurrentDownloads int) *Sink {
+func NewSink(deadline time.Duration, maxNLeeches int, maxConcurrentDownloads int, onDiscard func([]byte)) *Sink {
 	ms := new(Sink)
 
 	ms.PeerID = randomID()
@@ -19,34 +19,37 @@ func NewSink(deadline time.Duration, maxNLeeches int, maxConcurrentDownloads int
 	ms.incomingInfoHashes = make(map[string][]netip.AddrPort)
 	ms.incomingFamilies = make(map[string]int)
 	ms.termination = make(chan any)
+	ms.onDiscard = onDiscard
 
 	return ms
 }
 
-func (ms *Sink) Sink(res Result) {
+func (ms *Sink) Sink(res Result) bool {
 	if ms.terminated.Load() {
-		return
+		return false
 	}
 	ms.incomingInfoHashesMx.Lock()
 	defer ms.incomingInfoHashesMx.Unlock()
 
 	// cap the max # of leeches
 	if len(ms.incomingInfoHashes) >= ms.maxNLeeches {
-		return
+		return false
 	}
 
 	infoHash := res.InfoHash()
 	peerAddrs := res.PeerAddrs()
 
 	if _, exists := ms.incomingInfoHashes[string(infoHash)]; exists {
-		return
+		return false
 	} else if len(peerAddrs) > 0 {
 		peer := peerAddrs[0]
 		ms.incomingInfoHashes[string(infoHash)] = peerAddrs[1:]
 		ms.incomingFamilies[string(infoHash)] = res.Family()
 
 		go ms.download(infoHash, peer)
+		return true
 	}
+	return false
 }
 
 func (ms *Sink) download(infoHash []byte, peer netip.AddrPort) {
@@ -126,5 +129,8 @@ func (ms *Sink) onLeechError(infoHash []byte, err error) {
 	} else {
 		delete(ms.incomingInfoHashes, string(infoHash))
 		delete(ms.incomingFamilies, string(infoHash))
+		if ms.onDiscard != nil {
+			ms.onDiscard(infoHash)
+		}
 	}
 }

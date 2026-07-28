@@ -26,6 +26,12 @@ func InfoHashCacheAdd(infoHash string) bool {
 	return infoHashCache.Add(infoHash)
 }
 
+func InfoHashCacheRemove(infoHash string) {
+	infoHashCacheMu.Lock()
+	defer infoHashCacheMu.Unlock()
+	infoHashCache.Remove(infoHash)
+}
+
 func PopulateInfoHashCacheFromDatabase(database db.Repository) {
 	all, err := database.GetAllInfoHashes()
 	if err != nil {

@@ -87,4 +87,5 @@ type Sink struct {
 
 	terminated  atomic.Bool
 	termination chan any
+	onDiscard   func([]byte)
 }
