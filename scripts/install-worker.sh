@@ -24,6 +24,7 @@ OPEN_FIREWALL=true
 usage() {
   cat <<'EOF'
 Install dhtc Worker as a systemd service.
+Running the installer again upgrades or repairs the existing installation.
 
 Usage:
   sudo ./install-worker.sh [options]
@@ -63,6 +64,10 @@ After installation:
   systemctl status dhtc-worker
   journalctl -u dhtc-worker -f
   curl http://127.0.0.1:4200/health
+
+Reinstall or upgrade:
+  sudo ./install-worker.sh
+  Existing Worker ID and cluster token are preserved unless explicitly replaced.
 
 Master configuration:
   dhtc -node-role master \
@@ -161,7 +166,7 @@ for value in "$QUEUE" "$BATCH" "$MAX_DOWNLOADS" "$MAX_LEECHES" "$RATE_LIMIT"; do
 done
 [ "$BATCH" -le 64 ] || { echo "--batch cannot exceed 64" >&2; exit 2; }
 
-for command in awk curl id install mktemp od sha256sum systemctl tr uname useradd; do
+for command in awk curl id install mktemp mv od sha256sum systemctl tr uname useradd; do
   command -v "$command" >/dev/null 2>&1 || { echo "Required command not found: $command" >&2; exit 1; }
 done
 
@@ -223,7 +228,8 @@ if ! id "$SERVICE_USER" >/dev/null 2>&1; then
 fi
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$DATA_DIR"
 install -d -m 0755 "$INSTALL_DIR"
-install -m 0755 "$TMP_DIR/$ASSET" "$INSTALL_DIR/dhtc-worker"
+install -m 0755 "$TMP_DIR/$ASSET" "$INSTALL_DIR/.dhtc-worker.new"
+mv -f "$INSTALL_DIR/.dhtc-worker.new" "$INSTALL_DIR/dhtc-worker"
 
 umask 077
 printf 'DHTC_CLUSTER_TOKEN=%s\nDHTC_WORKER_ID=%s\n' "$TOKEN" "$WORKER_ID" > "$ENV_FILE"
@@ -257,7 +263,8 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now "$SERVICE_NAME"
+systemctl enable "$SERVICE_NAME"
+systemctl restart "$SERVICE_NAME"
 
 FIREWALL_STATUS="not managed"
 if [ "$OPEN_FIREWALL" = true ]; then

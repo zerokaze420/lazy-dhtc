@@ -213,6 +213,8 @@ Worker 安装脚本默认使用 `--performance auto`，根据 VPS 的在线 CPU 
 
 安装时脚本会自动通过 `ufw` 或运行中的 `firewalld` 放行 Worker 监听端口（默认 `4200/tcp`）。使用云厂商安全组的 VPS 仍需在控制台放行该端口；若端口由其他方式管理，可传入 `--no-open-firewall` 跳过本机防火墙配置。
 
+脚本支持直接覆盖安装。再次运行相同安装命令会原子替换 Worker 二进制、更新 systemd 单元并重启服务；已有 Worker ID 和集群 Token 会自动保留，除非显式传入新的 `--worker-id` 或 `--token`。
+
 ```shell
 sudo ./scripts/install-worker.sh --performance auto
 ```
