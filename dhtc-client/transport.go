@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"time"
 
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/rs/zerolog/log"
@@ -118,6 +119,7 @@ func (t *Transport) Terminate() {
 
 // readMessages is a goroutine!
 func (t *Transport) readMessages() error {
+	retryDelay := time.Duration(0)
 	for {
 		n, fromSA, err := t.fd.ReadFrom(t.buffer)
 		if err != nil {
@@ -126,9 +128,29 @@ func (t *Transport) readMessages() error {
 				return nil
 			default:
 				log.Warn().Err(err).Msg("Could NOT read an UDP packet!")
-				continue
 			}
+
+			// Persistent socket/resource errors can otherwise make ReadFrom fail
+			// immediately forever and consume a full CPU core. Back off while still
+			// allowing shutdown to interrupt the wait.
+			if retryDelay == 0 {
+				retryDelay = 10 * time.Millisecond
+			} else {
+				retryDelay *= 2
+				if retryDelay > time.Second {
+					retryDelay = time.Second
+				}
+			}
+			timer := time.NewTimer(retryDelay)
+			select {
+			case <-t.done:
+				timer.Stop()
+				return nil
+			case <-timer.C:
+			}
+			continue
 		}
+		retryDelay = 0
 
 		if n == 0 {
 			/* Datagram sockets in various domains  (e.g., the UNIX and Internet domains) permit

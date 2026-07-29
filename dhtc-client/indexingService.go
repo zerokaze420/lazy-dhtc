@@ -21,6 +21,12 @@ type getPeersEntry struct {
 	createdAt time.Time
 }
 
+// Keep the pending request table well below the two-byte transaction ID space.
+// A busy DHT node can otherwise fill all 65536 IDs and make every new sample
+// scan the entire map while holding requestsMu, effectively turning overload
+// into a CPU spin loop.
+const maxPendingGetPeersRequests = 8192
+
 type IndexingService struct {
 	// Private
 	protocol      *Protocol
@@ -481,14 +487,19 @@ func (is *IndexingService) probeBootstrapCandidate(addr netip.AddrPort) {
 	is.protocol.SendMessage(NewFindNodeQuery(is.nodeID, target, is.want), addr)
 }
 
-func (is *IndexingService) requestPeers(infoHash []byte, addr netip.AddrPort) {
+func (is *IndexingService) requestPeers(infoHash []byte, addr netip.AddrPort) bool {
 	if is.stopped() {
-		return
+		return false
 	}
 
 	is.requestsMu.Lock()
+	if len(is.getPeersRequests) >= maxPendingGetPeersRequests {
+		is.requestsMu.Unlock()
+		return false
+	}
+
 	var t [2]byte
-	for range 65536 {
+	for {
 		t = uint16BE(is.counter)
 		is.counter++
 		if entry, exists := is.getPeersRequests[t]; !exists || time.Since(entry.createdAt) > 5*time.Minute {
@@ -501,6 +512,7 @@ func (is *IndexingService) requestPeers(infoHash []byte, addr netip.AddrPort) {
 	msg := NewGetPeersQuery(is.nodeID, infoHash, is.want)
 	msg.T = t[:]
 	is.protocol.SendMessage(msg, addr)
+	return true
 }
 
 func (is *IndexingService) onSampleInfohashesQuery(msg *Message, addr netip.AddrPort) {
