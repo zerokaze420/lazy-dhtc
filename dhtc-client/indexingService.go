@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -26,6 +27,10 @@ type getPeersEntry struct {
 // scan the entire map while holding requestsMu, effectively turning overload
 // into a CPU spin loop.
 const maxPendingGetPeersRequests = 8192
+
+// DHT replies normally arrive within a few seconds. Keeping unanswered
+// requests for minutes makes a short burst block all subsequent discovery.
+const getPeersRequestTimeout = 15 * time.Second
 
 type IndexingService struct {
 	// Private
@@ -45,9 +50,11 @@ type IndexingService struct {
 	nodeID       []byte
 	routingTable *RoutingTable
 
-	counter          uint16
-	getPeersRequests map[[2]byte]getPeersEntry
-	requestsMu       sync.Mutex
+	counter           uint16
+	getPeersRequests  map[[2]byte]getPeersEntry
+	requestsMu        sync.Mutex
+	nextRequestExpiry time.Time
+	requestsRejected  atomic.Uint64
 
 	probeCache   map[netip.Addr]time.Time
 	probeCacheMu sync.Mutex
@@ -492,9 +499,12 @@ func (is *IndexingService) requestPeers(infoHash []byte, addr netip.AddrPort) bo
 		return false
 	}
 
+	now := time.Now()
 	is.requestsMu.Lock()
+	is.expireOldGetPeersRequestsLocked(now)
 	if len(is.getPeersRequests) >= maxPendingGetPeersRequests {
 		is.requestsMu.Unlock()
+		is.requestsRejected.Add(1)
 		return false
 	}
 
@@ -502,11 +512,15 @@ func (is *IndexingService) requestPeers(infoHash []byte, addr netip.AddrPort) bo
 	for {
 		t = uint16BE(is.counter)
 		is.counter++
-		if entry, exists := is.getPeersRequests[t]; !exists || time.Since(entry.createdAt) > 5*time.Minute {
+		if entry, exists := is.getPeersRequests[t]; !exists || now.Sub(entry.createdAt) >= getPeersRequestTimeout {
 			break
 		}
 	}
-	is.getPeersRequests[t] = getPeersEntry{infoHash: append([]byte(nil), infoHash...), createdAt: time.Now()}
+	is.getPeersRequests[t] = getPeersEntry{infoHash: append([]byte(nil), infoHash...), createdAt: now}
+	expiresAt := now.Add(getPeersRequestTimeout)
+	if is.nextRequestExpiry.IsZero() || expiresAt.Before(is.nextRequestExpiry) {
+		is.nextRequestExpiry = expiresAt
+	}
 	is.requestsMu.Unlock()
 
 	msg := NewGetPeersQuery(is.nodeID, infoHash, is.want)
@@ -541,14 +555,39 @@ func (is *IndexingService) addressFamily() int {
 }
 
 func (is *IndexingService) expireOldGetPeersRequests() {
-	cutoff := time.Now().Add(-5 * time.Minute)
 	is.requestsMu.Lock()
 	defer is.requestsMu.Unlock()
+	is.expireOldGetPeersRequestsLocked(time.Now())
+}
+
+func (is *IndexingService) expireOldGetPeersRequestsLocked(now time.Time) {
+	if !is.nextRequestExpiry.IsZero() && now.Before(is.nextRequestExpiry) {
+		return
+	}
+	cutoff := now.Add(-getPeersRequestTimeout)
+	nextExpiry := time.Time{}
 	for t, entry := range is.getPeersRequests {
-		if entry.createdAt.Before(cutoff) {
+		if !entry.createdAt.After(cutoff) {
 			delete(is.getPeersRequests, t)
+			continue
+		}
+		expiresAt := entry.createdAt.Add(getPeersRequestTimeout)
+		if nextExpiry.IsZero() || expiresAt.Before(nextExpiry) {
+			nextExpiry = expiresAt
 		}
 	}
+	is.nextRequestExpiry = nextExpiry
+}
+
+func (is *IndexingService) pendingGetPeersRequests() int {
+	is.requestsMu.Lock()
+	defer is.requestsMu.Unlock()
+	is.expireOldGetPeersRequestsLocked(time.Now())
+	return len(is.getPeersRequests)
+}
+
+func (is *IndexingService) rejectedGetPeersRequests() uint64 {
+	return is.requestsRejected.Load()
 }
 
 func (is *IndexingService) pruneProbeCache() {

@@ -14,6 +14,8 @@ type Service interface {
 	Start(context.Context, []string)
 	Terminate()
 	routingTableSize() int
+	pendingGetPeersRequests() int
+	rejectedGetPeersRequests() uint64
 }
 
 type Result interface {
@@ -94,6 +96,22 @@ func (m *Manager) onIndexingResult(res IndexingResult) {
 
 func (m *Manager) OutputDropped() uint64 {
 	return m.outputDropped.Load()
+}
+
+func (m *Manager) PendingGetPeersRequests() int {
+	total := 0
+	for _, service := range m.indexingServices {
+		total += service.pendingGetPeersRequests()
+	}
+	return total
+}
+
+func (m *Manager) RejectedGetPeersRequests() uint64 {
+	var total uint64
+	for _, service := range m.indexingServices {
+		total += service.rejectedGetPeersRequests()
+	}
+	return total
 }
 
 func (m *Manager) Output() <-chan Result {

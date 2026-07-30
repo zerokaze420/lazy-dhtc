@@ -170,6 +170,8 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 			"discovered":            crawlerStatus.Discovered,
 			"download_succeeded":    crawlerStatus.DownloadSucceeded,
 			"dht_output_dropped":    crawlerStatus.DHTOutputDropped,
+			"pending_get_peers":     crawlerStatus.PendingGetPeers,
+			"get_peers_rejected":    crawlerStatus.GetPeersRejected,
 			"queued":                queueStats.Queued,
 			"queue_dropped":         queueStats.Dropped,
 			"dropped":               queueStats.Dropped,
@@ -234,6 +236,7 @@ func logWorkerMetrics(ctx context.Context, workerID string, crawler *ui.CrawlerM
 	var previousDiscovered uint64
 	var previousDownloads uint64
 	var previousDHTDropped uint64
+	var previousGetPeersRejected uint64
 	var previousFlushed uint64
 	for {
 		select {
@@ -256,10 +259,14 @@ func logWorkerMetrics(ctx context.Context, workerID string, crawler *ui.CrawlerM
 			Uint64("flush_batches", queueStats.FlushBatches).
 			Uint64("dht_output_dropped", crawlerStatus.DHTOutputDropped).
 			Uint64("dht_output_dropped_interval", crawlerStatus.DHTOutputDropped-previousDHTDropped).
+			Int("pending_get_peers", crawlerStatus.PendingGetPeers).
+			Uint64("get_peers_rejected", crawlerStatus.GetPeersRejected).
+			Uint64("get_peers_rejected_interval", crawlerStatus.GetPeersRejected-previousGetPeersRejected).
 			Msg("Worker metrics")
 		previousDiscovered = crawlerStatus.Discovered
 		previousDownloads = crawlerStatus.DownloadSucceeded
 		previousDHTDropped = crawlerStatus.DHTOutputDropped
+		previousGetPeersRejected = crawlerStatus.GetPeersRejected
 		previousFlushed = queueStats.Flushed
 	}
 }
