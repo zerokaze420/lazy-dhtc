@@ -12,7 +12,6 @@ import (
 	"dhtc/notifier"
 	"dhtc/ui"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -122,12 +121,6 @@ func main() {
 }
 
 func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
-	if cfg.MaxConcurrentDownloads == 10 {
-		cfg.MaxConcurrentDownloads = 2
-	}
-	if cfg.MaxLeeches == 128 {
-		cfg.MaxLeeches = 32
-	}
 	if strings.TrimSpace(cfg.ClusterToken) == "" {
 		log.Fatal().Msg("cluster token is required in worker mode")
 	}
@@ -148,26 +141,42 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 		queue = cluster.NewWorkerQueue(cfg.WorkerID, cfg.WorkerQueue, "", onAck)
 	}
 	enqueue := func(md dhtcclient.Metadata) bool {
-		log.Info().Str("name", md.Name).Hex("info_hash", md.InfoHash).Str("worker_id", cfg.WorkerID).Msg("Worker discovered metadata")
+		log.Debug().Str("name", md.Name).Hex("info_hash", md.InfoHash).Str("worker_id", cfg.WorkerID).Msg("Worker discovered metadata")
 		return queue.Enqueue(md)
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	crawler := ui.NewWorkerCrawlerManager(cfg, bootstrapNodes, enqueue)
+	if pushMode {
+		queue.SetMaster(cfg.MasterURL, cfg.ClusterToken)
+		queue.StartFlushLoop(ctx, 30*time.Second, cfg.WorkerBatch, cfg.WorkerBatch)
+		log.Info().Str("master", cfg.MasterURL).Msg("Worker push mode enabled")
+	}
 	if !cfg.CrawlerScheduleEnabled {
 		crawler.Start()
 	}
-	if pushMode {
-		queue.SetMaster(cfg.MasterURL, cfg.ClusterToken)
-		queue.StartFlushLoop(ctx, 5*time.Minute, cfg.WorkerQueue)
-		log.Info().Str("master", cfg.MasterURL).Msg("Worker push mode enabled")
-	}
+	go logWorkerMetrics(ctx, cfg.WorkerID, crawler, queue)
 
 	mux := http.NewServeMux()
 	mux.Handle(cluster.QueuePath, queue.Handler(cfg.ClusterToken, cfg.WorkerBatch))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		crawlerStatus := crawler.Status()
+		queueStats := queue.Stats()
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"ok","role":"worker","queued":%d,"dropped":%d,"paused":%t}`, queue.Length(), queue.Dropped(), !crawler.Status().Running)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":                "ok",
+			"role":                  "worker",
+			"paused":                !crawlerStatus.Running,
+			"discovered":            crawlerStatus.Discovered,
+			"download_succeeded":    crawlerStatus.DownloadSucceeded,
+			"dht_output_dropped":    crawlerStatus.DHTOutputDropped,
+			"queued":                queueStats.Queued,
+			"queue_dropped":         queueStats.Dropped,
+			"dropped":               queueStats.Dropped,
+			"flushed":               queueStats.Flushed,
+			"flush_batches":         queueStats.FlushBatches,
+			"flush_rate_per_second": queueStats.FlushRatePerSecond,
+		})
 	})
 	mux.HandleFunc("/api/worker/v1/control", func(w http.ResponseWriter, r *http.Request) {
 		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -216,6 +225,43 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	_ = server.Shutdown(shutdownCtx)
+}
+
+func logWorkerMetrics(ctx context.Context, workerID string, crawler *ui.CrawlerManager, queue *cluster.WorkerQueue) {
+	const interval = time.Minute
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	var previousDiscovered uint64
+	var previousDownloads uint64
+	var previousDHTDropped uint64
+	var previousFlushed uint64
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		crawlerStatus := crawler.Status()
+		queueStats := queue.Stats()
+		log.Info().
+			Str("worker_id", workerID).
+			Uint64("discovered", crawlerStatus.Discovered).
+			Float64("discovered_per_second", float64(crawlerStatus.Discovered-previousDiscovered)/interval.Seconds()).
+			Uint64("download_succeeded", crawlerStatus.DownloadSucceeded).
+			Float64("downloads_per_second", float64(crawlerStatus.DownloadSucceeded-previousDownloads)/interval.Seconds()).
+			Int("queued", queueStats.Queued).
+			Uint64("queue_dropped", queueStats.Dropped).
+			Uint64("flushed", queueStats.Flushed).
+			Float64("flush_per_second", float64(queueStats.Flushed-previousFlushed)/interval.Seconds()).
+			Uint64("flush_batches", queueStats.FlushBatches).
+			Uint64("dht_output_dropped", crawlerStatus.DHTOutputDropped).
+			Uint64("dht_output_dropped_interval", crawlerStatus.DHTOutputDropped-previousDHTDropped).
+			Msg("Worker metrics")
+		previousDiscovered = crawlerStatus.Discovered
+		previousDownloads = crawlerStatus.DownloadSucceeded
+		previousDHTDropped = crawlerStatus.DHTOutputDropped
+		previousFlushed = queueStats.Flushed
+	}
 }
 
 func splitList(value string) []string {

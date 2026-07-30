@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -28,6 +29,7 @@ type Manager struct {
 	stopOnce         sync.Once
 	ctx              context.Context
 	cancel           context.CancelFunc
+	outputDropped    atomic.Uint64
 }
 
 type ListenEndpoint struct {
@@ -85,8 +87,13 @@ func (m *Manager) onIndexingResult(res IndexingResult) {
 		return
 	case m.output <- res:
 	default:
+		m.outputDropped.Add(1)
 		log.Debug().Msg("DHT manager output ch is full, idx result dropped!")
 	}
+}
+
+func (m *Manager) OutputDropped() uint64 {
+	return m.outputDropped.Load()
 }
 
 func (m *Manager) Output() <-chan Result {

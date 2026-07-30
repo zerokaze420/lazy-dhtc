@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -26,24 +27,31 @@ type CrawlerStatus struct {
 	NextScheduleChange  time.Time
 	ManualOverride      bool
 	ManualOverrideUntil time.Time
+	Discovered          uint64
+	DownloadSucceeded   uint64
+	DHTOutputDropped    uint64
 }
 
 type CrawlerManager struct {
-	mu              sync.Mutex
-	configuration   *config.Configuration
-	database        db.Repository
-	notifier        *notifier.Manager
-	hub             *Hub
-	bootstrapNodes4 []string
-	stop            chan struct{}
-	startedAt       time.Time
-	autoStopAt      time.Time
-	threads         int
-	running         bool
-	manualOverride  bool
-	manualRun       bool
-	manualUntil     time.Time
-	onMetadata      func(dhtcclient.Metadata) bool
+	mu                sync.Mutex
+	configuration     *config.Configuration
+	database          db.Repository
+	notifier          *notifier.Manager
+	hub               *Hub
+	bootstrapNodes4   []string
+	stop              chan struct{}
+	startedAt         time.Time
+	autoStopAt        time.Time
+	threads           int
+	running           bool
+	manualOverride    bool
+	manualRun         bool
+	manualUntil       time.Time
+	onMetadata        func(dhtcclient.Metadata) bool
+	discovered        atomic.Uint64
+	downloadSucceeded atomic.Uint64
+	dhtOutputDropped  atomic.Uint64
+	activeDHTManager  *dhtcclient.Manager
 }
 
 func NewCrawlerManager(configuration *config.Configuration, bootstrapNodes4 []string, database db.Repository, nManager *notifier.Manager, hub *Hub) *CrawlerManager {
@@ -130,6 +138,10 @@ func (m *CrawlerManager) Status() CrawlerStatus {
 
 	now := time.Now()
 	_, next := scheduleState(now, m.configuration.CrawlerScheduleStart, m.configuration.CrawlerScheduleEnd)
+	dhtOutputDropped := m.dhtOutputDropped.Load()
+	if m.activeDHTManager != nil {
+		dhtOutputDropped += m.activeDHTManager.OutputDropped()
+	}
 	return CrawlerStatus{
 		Running:             m.running,
 		StartedAt:           m.startedAt,
@@ -142,6 +154,9 @@ func (m *CrawlerManager) Status() CrawlerStatus {
 		NextScheduleChange:  next,
 		ManualOverride:      m.manualOverride,
 		ManualOverrideUntil: m.manualUntil,
+		Discovered:          m.discovered.Load(),
+		DownloadSucceeded:   m.downloadSucceeded.Load(),
+		DHTOutputDropped:    dhtOutputDropped,
 	}
 }
 
@@ -279,6 +294,17 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
 	log.Info().Bool("enabled", mode != config.NetworkModeIPv4).Msg("IPv6 DHT")
 
 	trawlingManager := dhtcclient.NewManager(endpoints, 10*time.Second, m.configuration.MaxNeighbors, m.configuration.RateLimit)
+	m.mu.Lock()
+	m.activeDHTManager = trawlingManager
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		if m.activeDHTManager == trawlingManager {
+			m.dhtOutputDropped.Add(trawlingManager.OutputDropped())
+			m.activeDHTManager = nil
+		}
+		m.mu.Unlock()
+	}()
 	metadataSink := dhtcclient.NewSink(
 		m.configuration.DrainTimeout,
 		m.configuration.MaxLeeches,
@@ -293,6 +319,7 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
 		case <-stop:
 			return
 		case result := <-trawlingManager.Output():
+			m.discovered.Add(1)
 			hash := result.InfoHash()
 			if cache.InfoHashCacheAdd(string(hash)) {
 				if !metadataSink.Sink(result) {
@@ -303,6 +330,7 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
 			if !ok {
 				return
 			}
+			m.downloadSucceeded.Add(1)
 			if m.onMetadata != nil {
 				accepted := m.onMetadata(md)
 				if m.database == nil && !accepted {

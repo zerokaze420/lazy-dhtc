@@ -39,19 +39,34 @@ type Ack struct {
 }
 
 type WorkerQueue struct {
-	workerID    string
-	limit       int
-	mu          sync.Mutex
-	nextID      uint64
-	items       []Record
-	dropped     atomic.Uint64
-	onAck       func(dhtcclient.Metadata)
-	cachePath   string
-	masterURL   string
-	clusterToken string
-	flushCtx    context.Context
-	stopFlush   context.CancelFunc
-	flushing    atomic.Bool
+	workerID       string
+	limit          int
+	mu             sync.Mutex
+	nextID         uint64
+	items          []Record
+	dropped        atomic.Uint64
+	onAck          func(dhtcclient.Metadata)
+	cachePath      string
+	cacheDirty     atomic.Bool
+	masterURL      string
+	clusterToken   string
+	flushCtx       context.Context
+	stopFlush      context.CancelFunc
+	flushWake      chan struct{}
+	flushBatch     int
+	flushThreshold int
+	flushDone      chan struct{}
+	flushed        atomic.Uint64
+	flushBatches   atomic.Uint64
+	startedAt      time.Time
+}
+
+type WorkerQueueStats struct {
+	Queued             int     `json:"queued"`
+	Dropped            uint64  `json:"dropped"`
+	Flushed            uint64  `json:"flushed"`
+	FlushBatches       uint64  `json:"flush_batches"`
+	FlushRatePerSecond float64 `json:"flush_rate_per_second"`
 }
 
 func NewWorkerQueue(workerID string, limit int, cachePath string, onAck func(dhtcclient.Metadata)) *WorkerQueue {
@@ -61,22 +76,27 @@ func NewWorkerQueue(workerID string, limit int, cachePath string, onAck func(dht
 	if limit < 1 {
 		limit = 256
 	}
-	q := &WorkerQueue{workerID: workerID, limit: limit, onAck: onAck, cachePath: cachePath}
+	q := &WorkerQueue{workerID: workerID, limit: limit, onAck: onAck, cachePath: cachePath, flushWake: make(chan struct{}, 1), startedAt: time.Now()}
 	q.loadFromCache()
 	return q
 }
 
 func (q *WorkerQueue) Enqueue(md dhtcclient.Metadata) bool {
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	if len(q.items) >= q.limit {
+		q.mu.Unlock()
 		q.dropped.Add(1)
 		log.Warn().Uint64("dropped", q.dropped.Load()).Msg("Worker metadata queue is full")
 		return false
 	}
 	q.nextID++
 	q.items = append(q.items, Record{ID: q.nextID, Metadata: md})
-	q.saveToCache()
+	length := len(q.items)
+	q.cacheDirty.Store(true)
+	q.mu.Unlock()
+	if q.flushThreshold > 0 && length >= q.flushThreshold {
+		q.signalFlush()
+	}
 	return true
 }
 
@@ -106,8 +126,12 @@ func (q *WorkerQueue) Ack(ids []uint64) {
 		}
 	}
 	q.items = kept
-	q.saveToCache()
+	q.cacheDirty.Store(true)
 	q.mu.Unlock()
+	if len(ackedMetadata) > 0 {
+		q.flushed.Add(uint64(len(ackedMetadata)))
+		q.flushBatches.Add(1)
+	}
 
 	if q.onAck != nil {
 		for _, md := range ackedMetadata {
@@ -119,6 +143,22 @@ func (q *WorkerQueue) Ack(ids []uint64) {
 func (q *WorkerQueue) Length() int     { q.mu.Lock(); defer q.mu.Unlock(); return len(q.items) }
 func (q *WorkerQueue) Dropped() uint64 { return q.dropped.Load() }
 
+func (q *WorkerQueue) Stats() WorkerQueueStats {
+	flushed := q.flushed.Load()
+	elapsed := time.Since(q.startedAt).Seconds()
+	rate := 0.0
+	if elapsed > 0 {
+		rate = float64(flushed) / elapsed
+	}
+	return WorkerQueueStats{
+		Queued:             q.Length(),
+		Dropped:            q.Dropped(),
+		Flushed:            flushed,
+		FlushBatches:       q.flushBatches.Load(),
+		FlushRatePerSecond: rate,
+	}
+}
+
 func (q *WorkerQueue) SetMaster(url, token string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -127,7 +167,11 @@ func (q *WorkerQueue) SetMaster(url, token string) {
 }
 
 func (q *WorkerQueue) Flush(ctx context.Context) error {
-	batch := q.Batch(64)
+	batchSize := q.flushBatch
+	if batchSize < 1 {
+		batchSize = 64
+	}
+	batch := q.Batch(batchSize)
 	if len(batch.Items) == 0 {
 		return nil
 	}
@@ -160,35 +204,77 @@ func (q *WorkerQueue) Flush(ctx context.Context) error {
 	if err := json.NewDecoder(resp.Body).Decode(&ack); err != nil {
 		return err
 	}
+	if len(ack.IDs) == 0 {
+		return fmt.Errorf("master acknowledged no records")
+	}
 	q.Ack(ack.IDs)
-	log.Info().Str("worker_id", q.workerID).Int("flushed", len(ack.IDs)).Int("queued", q.Length()).Msg("Worker flushed batch to master")
+	log.Debug().Str("worker_id", q.workerID).Int("flushed", len(ack.IDs)).Int("queued", q.Length()).Msg("Worker flushed batch to master")
 	return nil
 }
 
-func (q *WorkerQueue) StartFlushLoop(ctx context.Context, interval time.Duration, threshold int) {
+func (q *WorkerQueue) StartFlushLoop(ctx context.Context, interval time.Duration, threshold, batchSize int) {
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	if batchSize < 1 || batchSize > 64 {
+		batchSize = 64
+	}
+	if threshold < 1 {
+		threshold = batchSize
+	}
+	q.flushBatch = batchSize
+	q.flushThreshold = threshold
 	q.flushCtx, q.stopFlush = context.WithCancel(ctx)
+	q.flushDone = make(chan struct{})
 	go func() {
+		defer close(q.flushDone)
 		ticker := time.NewTicker(interval)
+		cacheTicker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
+		defer cacheTicker.Stop()
 		for {
 			select {
 			case <-q.flushCtx.Done():
+				q.saveToCache()
 				return
 			case <-ticker.C:
+				q.drainFlush(q.flushCtx)
+			case <-q.flushWake:
+				q.drainFlush(q.flushCtx)
+			case <-cacheTicker.C:
+				q.saveToCache()
 			}
-			if q.Length() == 0 || q.flushing.Load() {
-				continue
-			}
-			q.flushing.Store(true)
-			_ = q.Flush(q.flushCtx)
-			q.flushing.Store(false)
 		}
 	}()
+	if q.Length() > 0 {
+		q.signalFlush()
+	}
+}
+
+func (q *WorkerQueue) signalFlush() {
+	select {
+	case q.flushWake <- struct{}{}:
+	default:
+	}
+}
+
+func (q *WorkerQueue) drainFlush(ctx context.Context) {
+	for q.Length() > 0 {
+		if err := q.Flush(ctx); err != nil {
+			if ctx.Err() == nil {
+				log.Warn().Err(err).Str("worker_id", q.workerID).Msg("Worker flush failed")
+			}
+			return
+		}
+	}
 }
 
 func (q *WorkerQueue) StopFlushLoop() {
 	if q.stopFlush != nil {
 		q.stopFlush()
+	}
+	if q.flushDone != nil {
+		<-q.flushDone
 	}
 }
 
@@ -197,17 +283,29 @@ func (q *WorkerQueue) cacheFilePath() string {
 }
 
 func (q *WorkerQueue) saveToCache() {
-	if q.cachePath == "" {
+	if q.cachePath == "" || !q.cacheDirty.CompareAndSwap(true, false) {
 		return
 	}
+	q.mu.Lock()
+	items := append([]Record(nil), q.items...)
+	q.mu.Unlock()
 	if err := os.MkdirAll(q.cachePath, 0700); err != nil {
+		q.cacheDirty.Store(true)
 		return
 	}
-	data, err := json.MarshalIndent(q.items, "", "  ")
+	data, err := json.Marshal(items)
 	if err != nil {
+		q.cacheDirty.Store(true)
 		return
 	}
-	_ = os.WriteFile(q.cacheFilePath(), data, 0600)
+	temporary := q.cacheFilePath() + ".tmp"
+	if err := os.WriteFile(temporary, data, 0600); err != nil {
+		q.cacheDirty.Store(true)
+		return
+	}
+	if err := os.Rename(temporary, q.cacheFilePath()); err != nil {
+		q.cacheDirty.Store(true)
+	}
 }
 
 func (q *WorkerQueue) loadFromCache() {

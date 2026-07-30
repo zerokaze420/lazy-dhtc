@@ -16,6 +16,7 @@ BATCH=""
 MAX_DOWNLOADS=""
 MAX_LEECHES=""
 RATE_LIMIT=""
+MASTER_URL=""
 INSTALL_DIR="/usr/local/bin"
 DATA_DIR="/var/lib/dhtc-worker"
 SERVICE_USER="dhtc-worker"
@@ -44,6 +45,7 @@ dhtc Worker 一键安装脚本
   --max-downloads N          元数据下载并发数，默认：自动选择
   --max-leeches N            活跃元数据任务数，默认：自动选择
   --rate-limit N             每个 DHT 网络每秒 UDP 包上限，默认：自动选择
+  --master-url URL           启用 Worker 主动推送模式，填写 Master 地址
 
 安装选项：
   --version VERSION          发布版本，例如 v1.0.13 或 latest，默认：latest
@@ -102,6 +104,7 @@ while [ "$#" -gt 0 ]; do
     --max-downloads) need_value "$@"; MAX_DOWNLOADS="$2"; shift 2 ;;
     --max-leeches) need_value "$@"; MAX_LEECHES="$2"; shift 2 ;;
     --rate-limit) need_value "$@"; RATE_LIMIT="$2"; shift 2 ;;
+    --master-url) need_value "$@"; MASTER_URL="$2"; shift 2 ;;
     --version) need_value "$@"; VERSION="$2"; shift 2 ;;
     --install-dir) need_value "$@"; INSTALL_DIR="$2"; shift 2 ;;
     --data-dir) need_value "$@"; DATA_DIR="$2"; shift 2 ;;
@@ -118,6 +121,8 @@ case "$SERVICE_NAME" in ''|*[!A-Za-z0-9_.@-]*) echo "错误：--service-name 包
 case "$INSTALL_DIR:$DATA_DIR" in *' '*|*'\t'*) echo "错误：安装路径不能包含空白字符" >&2; exit 2 ;; esac
 case "$NETWORK_MODE" in dual|ipv4) ;; *) echo "错误：--network-mode 只能是 dual 或 ipv4" >&2; exit 2 ;; esac
 case "$PERFORMANCE" in auto|high|max|conservative) ;; *) echo "错误：--performance 只能是 auto、high、max 或 conservative" >&2; exit 2 ;; esac
+case "$MASTER_URL" in ""|http://*|https://*) ;; *) echo "错误：--master-url 必须是 http:// 或 https:// URL" >&2; exit 2 ;; esac
+case "$MASTER_URL" in *' '*|*'\t'*) echo "错误：--master-url 不能包含空白字符" >&2; exit 2 ;; esac
 case "$ADDRESS" in *:*) ;; *) echo "错误：--address 必须使用 HOST:PORT 格式" >&2; exit 2 ;; esac
 PORT="${ADDRESS##*:}"
 case "$PORT" in ''|*[!0-9]*) echo "错误：--address 的端口必须是数字" >&2; exit 2 ;; esac
@@ -247,6 +252,10 @@ printf 'DHTC_CLUSTER_TOKEN=%s\nDHTC_WORKER_ID=%s\n' "$TOKEN" "$WORKER_ID" > "$EN
 chmod 0600 "$ENV_FILE"
 
 UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+PUSH_ARGS=""
+if [ -n "$MASTER_URL" ]; then
+  PUSH_ARGS="-master-url ${MASTER_URL} -worker-cache-dir ${DATA_DIR}/queue"
+fi
 cat > "$UNIT_FILE" <<EOF
 [Unit]
 Description=dhtc headless DHT Worker
@@ -259,7 +268,7 @@ User=${SERVICE_USER}
 Group=${SERVICE_USER}
 WorkingDirectory=${DATA_DIR}
 EnvironmentFile=${ENV_FILE}
-ExecStart=${INSTALL_DIR}/dhtc-worker -address ${ADDRESS} -NetworkMode ${NETWORK_MODE} -ListenIPv4 0.0.0.0:${DHT_PORT} -ListenIPv6 [::]:${DHT_PORT} -worker-queue ${QUEUE} -worker-batch ${BATCH} -MaxConcurrentDownloads ${MAX_DOWNLOADS} -MaxLeeches ${MAX_LEECHES} -RateLimit ${RATE_LIMIT} -RoutingTableCacheIPv4 ${DATA_DIR}/routing-table-v4.json -RoutingTableCacheIPv6 ${DATA_DIR}/routing-table-v6.json
+ExecStart=${INSTALL_DIR}/dhtc-worker -address ${ADDRESS} -NetworkMode ${NETWORK_MODE} -ListenIPv4 0.0.0.0:${DHT_PORT} -ListenIPv6 [::]:${DHT_PORT} -worker-queue ${QUEUE} -worker-batch ${BATCH} -MaxConcurrentDownloads ${MAX_DOWNLOADS} -MaxLeeches ${MAX_LEECHES} -RateLimit ${RATE_LIMIT} -RoutingTableCacheIPv4 ${DATA_DIR}/routing-table-v4.json -RoutingTableCacheIPv6 ${DATA_DIR}/routing-table-v6.json ${PUSH_ARGS}
 Restart=on-failure
 RestartSec=5s
 NoNewPrivileges=true
@@ -330,6 +339,11 @@ printf '│  性能档位     │ %s（%s 核 CPU，%s MiB 可用内存）\n' "$
 printf '│  队列 / 批量  │ %s / %s\n' "$QUEUE" "$BATCH"
 printf '│  下载 / 任务  │ %s / %s\n' "$MAX_DOWNLOADS" "$MAX_LEECHES"
 printf '│  UDP 速率     │ %s 包/秒/网络\n' "$RATE_LIMIT"
+if [ -n "$MASTER_URL" ]; then
+  printf '│  推送模式     │ %s\n' "$MASTER_URL"
+else
+  printf '│  传输模式     │ Master 主动拉取\n'
+fi
 echo "│"
 echo "├─ Master 连接信息"
 printf '│  Worker ID    │ %s\n' "$WORKER_ID"

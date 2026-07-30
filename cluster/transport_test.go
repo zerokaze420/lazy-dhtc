@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestWorkerQueuePullAndAck(t *testing.T) {
@@ -52,6 +55,54 @@ func TestWorkerQueuePullAndAck(t *testing.T) {
 	status := puller.Status()
 	if len(status) != 1 || !status[0].Online || status[0].Pulled != 2 || status[0].Queued != 0 {
 		t.Fatalf("worker status = %#v", status)
+	}
+}
+
+func TestWorkerPushFlushesImmediatelyAtThresholdAndDrainsQueue(t *testing.T) {
+	received := make(chan struct{}, 1)
+	server := httptest.NewServer(NewMasterFlushHandler("secret", func(dhtcclient.Metadata) bool {
+		select {
+		case received <- struct{}{}:
+		default:
+		}
+		return true
+	}))
+	defer server.Close()
+
+	queue := NewWorkerQueue("edge-push", 16, "", nil)
+	queue.SetMaster(server.URL, "secret")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	queue.StartFlushLoop(ctx, time.Hour, 2, 2)
+	defer queue.StopFlushLoop()
+	queue.Enqueue(dhtcclient.Metadata{InfoHash: make([]byte, 20), Name: "one"})
+	queue.Enqueue(dhtcclient.Metadata{InfoHash: make([]byte, 20), Name: "two"})
+
+	select {
+	case <-received:
+	case <-time.After(time.Second):
+		t.Fatal("threshold did not trigger an immediate push")
+	}
+	deadline := time.Now().Add(time.Second)
+	for queue.Length() != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if queue.Length() != 0 {
+		t.Fatalf("queue length = %d, want 0", queue.Length())
+	}
+}
+
+func TestWorkerQueueCacheSnapshotIsRestored(t *testing.T) {
+	directory := t.TempDir()
+	queue := NewWorkerQueue("edge-cache", 4, directory, nil)
+	queue.Enqueue(dhtcclient.Metadata{InfoHash: make([]byte, 20), Name: "cached"})
+	queue.saveToCache()
+	if _, err := os.Stat(filepath.Join(directory, "worker-queue.json")); err != nil {
+		t.Fatal(err)
+	}
+	restored := NewWorkerQueue("edge-cache", 4, directory, nil)
+	if restored.Length() != 1 || restored.Batch(1).Items[0].Metadata.Name != "cached" {
+		t.Fatalf("restored queue = %#v", restored.Batch(1))
 	}
 }
 
@@ -154,6 +205,10 @@ func TestWorkerQueueAckNotifiesReleasedMetadata(t *testing.T) {
 		}
 	default:
 		t.Fatal("ack did not notify released metadata")
+	}
+	stats := queue.Stats()
+	if stats.Flushed != 1 || stats.FlushBatches != 1 || stats.Queued != 0 {
+		t.Fatalf("queue stats = %#v", stats)
 	}
 }
 

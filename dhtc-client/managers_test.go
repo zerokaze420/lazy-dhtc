@@ -69,3 +69,13 @@ func TestIndexingResultReportsOverlayFamily(t *testing.T) {
 		t.Fatalf("overlay families = (%d, %d), want (4, 6)", ipv4.addressFamily(), ipv6.addressFamily())
 	}
 }
+
+func TestManagerCountsDroppedOutput(t *testing.T) {
+	manager := &Manager{output: make(chan Result, 1), done: make(chan struct{})}
+	result := IndexingResult{}
+	manager.onIndexingResult(result)
+	manager.onIndexingResult(result)
+	if manager.OutputDropped() != 1 {
+		t.Fatalf("output dropped = %d, want 1", manager.OutputDropped())
+	}
+}

@@ -96,3 +96,14 @@ func TestCrawlerEndpointsCreatesOneNetworkPerAddressFamily(t *testing.T) {
 		}
 	}
 }
+
+func TestCrawlerStatusIncludesMetrics(t *testing.T) {
+	manager := &CrawlerManager{configuration: &config.Configuration{}}
+	manager.discovered.Add(12)
+	manager.downloadSucceeded.Add(7)
+	manager.dhtOutputDropped.Add(3)
+	status := manager.Status()
+	if status.Discovered != 12 || status.DownloadSucceeded != 7 || status.DHTOutputDropped != 3 {
+		t.Fatalf("crawler metrics = %#v", status)
+	}
+}

@@ -211,12 +211,22 @@ crawler:
 
 Worker 安装脚本默认使用 `--performance auto`，根据 VPS 的在线 CPU 数量和可用内存选择 `conservative`、`high` 或 `max` 档位。自动档位会使用 64 条传输批次，并提高下载并发、活动任务数、UDP 速率和待拉取队列；任意单项参数仍可通过 `--queue`、`--batch`、`--max-downloads`、`--max-leeches`、`--rate-limit` 覆盖。
 
+默认使用 Master 主动拉取模式。传入 `--master-url https://master.example.com` 可启用主动推送：队列达到一个批次时立即发送，并持续排空积压；低流量时最多等待 30 秒。推送队列每 2 秒合并生成一次原子快照，避免逐条 metadata 全量写盘。
+
 安装时脚本会自动通过 `ufw` 或运行中的 `firewalld` 放行 Worker 监听端口（默认 `4200/tcp`）。使用云厂商安全组的 VPS 仍需在控制台放行该端口；若端口由其他方式管理，可传入 `--no-open-firewall` 跳过本机防火墙配置。
 
 脚本支持直接覆盖安装。再次运行相同安装命令会原子替换 Worker 二进制、更新 systemd 单元并重启服务；已有 Worker ID 和集群 Token 会自动保留，除非显式传入新的 `--worker-id` 或 `--token`。
 
 ```shell
 sudo ./scripts/install-worker.sh --performance auto
+```
+
+主动推送示例：
+
+```shell
+sudo ./scripts/install-worker.sh \
+  --performance auto \
+  --master-url 'https://master.example.com'
 ```
 
 资源充足且希望强制最高档时使用 `--performance max`；小型 VPS 可使用 `--performance conservative`。
@@ -244,9 +254,11 @@ dhtc \
   -worker-batch 16
 ```
 
-Worker 最低建议配置为 `1 vCPU、512 MB 内存、256 MB 可用磁盘`。磁盘主要保存 IPv4/IPv6 路由表缓存；待发送 Metadata 当前使用有界内存队列，不写本地种子数据库。更稳定的配置为 `1 vCPU、1 GB 内存`。
+Worker 最低建议配置为 `1 vCPU、512 MB 内存、256 MB 可用磁盘`。磁盘主要保存 IPv4/IPv6 路由表缓存；pull 模式使用有界内存队列，push 模式额外保存待确认队列快照。更稳定的配置为 `1 vCPU、1 GB 内存`。
 
-Master 每 5 秒主动拉取一次。Worker 只有在收到 Master 的确认后才删除记录；拉取或确认中断时，同一记录会再次出现，由 Master 的 InfoHash 唯一约束保证幂等。队列满后 Worker 拒绝新数据并记录丢弃数量，避免低配节点内存持续增长。Worker 健康接口 `/health` 会返回当前排队数和丢弃数。本阶段尚未实现磁盘队列，因此 Worker 重启会丢失尚未被 Master 确认的数据。
+Master 每 5 秒主动拉取一次。Worker 只有在收到 Master 的确认后才删除记录；拉取或确认中断时，同一记录会再次出现，由 Master 的 InfoHash 唯一约束保证幂等。队列满后 Worker 拒绝新数据并记录丢弃数量，避免低配节点内存持续增长。Worker 健康接口 `/health` 会返回当前排队数和丢弃数。push 模式会持久化尚未确认的记录，pull 模式重启时仍会丢失内存队列。
+
+Worker 每 60 秒输出一条 `Worker metrics` 聚合日志，不再为每条 metadata 输出 Info 日志。`/health` 同时暴露累计 `discovered`、`download_succeeded`、`dht_output_dropped`、`queued`、`queue_dropped`、`flushed`、`flush_batches` 和 `flush_rate_per_second`；原有 `dropped` 字段作为 `queue_dropped` 的兼容别名保留。
 
 Master GUI 的顶级导航包含 `/workers` 管理页面，与仪表盘同级。页面每 5 秒刷新，显示每个 Worker 的在线状态、Worker ID、公网 URL、待拉取数、累计拉取数、丢弃数、最后成功时间和最近错误。空队列但连接正常的 Worker 仍显示在线。
 
