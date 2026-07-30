@@ -64,7 +64,16 @@ func NewTransport(network string, laddr string, rateLimit int, onMessage func(*M
 	if rateLimit > 0 {
 		t.limiter = rate.NewLimiter(rate.Limit(rateLimit), rateLimit)
 	}
-	t.sendChan = make(chan sendRequest, 2048)
+	// Keep queueing delay below the request timeout. A large queue makes a
+	// request expire before it has actually reached the network.
+	queueSize := 256
+	if rateLimit > 0 && rateLimit < queueSize {
+		queueSize = rateLimit
+	}
+	if queueSize < 1 {
+		queueSize = 1
+	}
+	t.sendChan = make(chan sendRequest, queueSize)
 	t.done = make(chan struct{})
 
 	t.laddr = laddr
@@ -175,13 +184,14 @@ func (t *Transport) readMessages() error {
 }
 
 // WriteMessages writes a KRPC message to the specified address.
-func (t *Transport) WriteMessages(msg *Message, addr netip.AddrPort) {
+func (t *Transport) WriteMessages(msg *Message, addr netip.AddrPort) bool {
 	select {
 	case <-t.done:
-		return
+		return false
 	case t.sendChan <- sendRequest{msg, addr}:
+		return true
 	default:
-		// Drop message if channel is full
+		return false
 	}
 }
 

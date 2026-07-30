@@ -32,29 +32,33 @@ type CrawlerStatus struct {
 	DHTOutputDropped    uint64
 	PendingGetPeers     int
 	GetPeersRejected    uint64
+	GetPeersDeduped     uint64
+	GetPeersSendDropped uint64
 }
 
 type CrawlerManager struct {
-	mu                sync.Mutex
-	configuration     *config.Configuration
-	database          db.Repository
-	notifier          *notifier.Manager
-	hub               *Hub
-	bootstrapNodes4   []string
-	stop              chan struct{}
-	startedAt         time.Time
-	autoStopAt        time.Time
-	threads           int
-	running           bool
-	manualOverride    bool
-	manualRun         bool
-	manualUntil       time.Time
-	onMetadata        func(dhtcclient.Metadata) bool
-	discovered        atomic.Uint64
-	downloadSucceeded atomic.Uint64
-	dhtOutputDropped  atomic.Uint64
-	getPeersRejected  atomic.Uint64
-	activeDHTManager  *dhtcclient.Manager
+	mu                  sync.Mutex
+	configuration       *config.Configuration
+	database            db.Repository
+	notifier            *notifier.Manager
+	hub                 *Hub
+	bootstrapNodes4     []string
+	stop                chan struct{}
+	startedAt           time.Time
+	autoStopAt          time.Time
+	threads             int
+	running             bool
+	manualOverride      bool
+	manualRun           bool
+	manualUntil         time.Time
+	onMetadata          func(dhtcclient.Metadata) bool
+	discovered          atomic.Uint64
+	downloadSucceeded   atomic.Uint64
+	dhtOutputDropped    atomic.Uint64
+	getPeersRejected    atomic.Uint64
+	getPeersDeduped     atomic.Uint64
+	getPeersSendDropped atomic.Uint64
+	activeDHTManager    *dhtcclient.Manager
 }
 
 func NewCrawlerManager(configuration *config.Configuration, bootstrapNodes4 []string, database db.Repository, nManager *notifier.Manager, hub *Hub) *CrawlerManager {
@@ -143,10 +147,14 @@ func (m *CrawlerManager) Status() CrawlerStatus {
 	_, next := scheduleState(now, m.configuration.CrawlerScheduleStart, m.configuration.CrawlerScheduleEnd)
 	dhtOutputDropped := m.dhtOutputDropped.Load()
 	getPeersRejected := m.getPeersRejected.Load()
+	getPeersDeduped := m.getPeersDeduped.Load()
+	getPeersSendDropped := m.getPeersSendDropped.Load()
 	pendingGetPeers := 0
 	if m.activeDHTManager != nil {
 		dhtOutputDropped += m.activeDHTManager.OutputDropped()
 		getPeersRejected += m.activeDHTManager.RejectedGetPeersRequests()
+		getPeersDeduped += m.activeDHTManager.DedupedGetPeersRequests()
+		getPeersSendDropped += m.activeDHTManager.DroppedGetPeersSends()
 		pendingGetPeers = m.activeDHTManager.PendingGetPeersRequests()
 	}
 	return CrawlerStatus{
@@ -166,6 +174,8 @@ func (m *CrawlerManager) Status() CrawlerStatus {
 		DHTOutputDropped:    dhtOutputDropped,
 		PendingGetPeers:     pendingGetPeers,
 		GetPeersRejected:    getPeersRejected,
+		GetPeersDeduped:     getPeersDeduped,
+		GetPeersSendDropped: getPeersSendDropped,
 	}
 }
 
@@ -311,6 +321,8 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
 		if m.activeDHTManager == trawlingManager {
 			m.dhtOutputDropped.Add(trawlingManager.OutputDropped())
 			m.getPeersRejected.Add(trawlingManager.RejectedGetPeersRequests())
+			m.getPeersDeduped.Add(trawlingManager.DedupedGetPeersRequests())
+			m.getPeersSendDropped.Add(trawlingManager.DroppedGetPeersSends())
 			m.activeDHTManager = nil
 		}
 		m.mu.Unlock()

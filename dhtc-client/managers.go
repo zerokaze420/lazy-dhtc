@@ -16,6 +16,8 @@ type Service interface {
 	routingTableSize() int
 	pendingGetPeersRequests() int
 	rejectedGetPeersRequests() uint64
+	dedupedGetPeersRequests() uint64
+	droppedGetPeersSends() uint64
 }
 
 type Result interface {
@@ -110,6 +112,22 @@ func (m *Manager) RejectedGetPeersRequests() uint64 {
 	var total uint64
 	for _, service := range m.indexingServices {
 		total += service.rejectedGetPeersRequests()
+	}
+	return total
+}
+
+func (m *Manager) DedupedGetPeersRequests() uint64 {
+	var total uint64
+	for _, service := range m.indexingServices {
+		total += service.dedupedGetPeersRequests()
+	}
+	return total
+}
+
+func (m *Manager) DroppedGetPeersSends() uint64 {
+	var total uint64
+	for _, service := range m.indexingServices {
+		total += service.droppedGetPeersSends()
 	}
 	return total
 }

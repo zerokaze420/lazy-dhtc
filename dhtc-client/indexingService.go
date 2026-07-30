@@ -32,6 +32,8 @@ const maxPendingGetPeersRequests = 8192
 // requests for minutes makes a short burst block all subsequent discovery.
 const getPeersRequestTimeout = 15 * time.Second
 
+const maxPendingRequestsPerInfoHash = 2
+
 type IndexingService struct {
 	// Private
 	protocol      *Protocol
@@ -50,11 +52,14 @@ type IndexingService struct {
 	nodeID       []byte
 	routingTable *RoutingTable
 
-	counter           uint16
-	getPeersRequests  map[[2]byte]getPeersEntry
-	requestsMu        sync.Mutex
-	nextRequestExpiry time.Time
-	requestsRejected  atomic.Uint64
+	counter             uint16
+	getPeersRequests    map[[2]byte]getPeersEntry
+	pendingInfoHashes   map[string]uint8
+	requestsMu          sync.Mutex
+	nextRequestExpiry   time.Time
+	requestsRejected    atomic.Uint64
+	requestsDeduped     atomic.Uint64
+	requestsSendDropped atomic.Uint64
 
 	probeCache   map[netip.Addr]time.Time
 	probeCacheMu sync.Mutex
@@ -117,6 +122,7 @@ func NewIndexingService(network string, laddr string, cachePath string, interval
 	service.done = make(chan struct{})
 
 	service.getPeersRequests = make(map[[2]byte]getPeersEntry)
+	service.pendingInfoHashes = make(map[string]uint8)
 	service.probeCache = make(map[netip.Addr]time.Time)
 
 	return service
@@ -404,7 +410,9 @@ func (is *IndexingService) onGetPeersResponse(msg *Message, addr netip.AddrPort)
 
 	is.requestsMu.Lock()
 	entry, ok := is.getPeersRequests[t]
-	delete(is.getPeersRequests, t)
+	if ok {
+		is.removeGetPeersRequestLocked(t, entry)
+	}
 	is.requestsMu.Unlock()
 	if !ok {
 		return
@@ -502,6 +510,12 @@ func (is *IndexingService) requestPeers(infoHash []byte, addr netip.AddrPort) bo
 	now := time.Now()
 	is.requestsMu.Lock()
 	is.expireOldGetPeersRequestsLocked(now)
+	hashKey := string(infoHash)
+	if is.pendingInfoHashes[hashKey] >= maxPendingRequestsPerInfoHash {
+		is.requestsMu.Unlock()
+		is.requestsDeduped.Add(1)
+		return false
+	}
 	if len(is.getPeersRequests) >= maxPendingGetPeersRequests {
 		is.requestsMu.Unlock()
 		is.requestsRejected.Add(1)
@@ -517,6 +531,7 @@ func (is *IndexingService) requestPeers(infoHash []byte, addr netip.AddrPort) bo
 		}
 	}
 	is.getPeersRequests[t] = getPeersEntry{infoHash: append([]byte(nil), infoHash...), createdAt: now}
+	is.pendingInfoHashes[hashKey]++
 	expiresAt := now.Add(getPeersRequestTimeout)
 	if is.nextRequestExpiry.IsZero() || expiresAt.Before(is.nextRequestExpiry) {
 		is.nextRequestExpiry = expiresAt
@@ -525,7 +540,15 @@ func (is *IndexingService) requestPeers(infoHash []byte, addr netip.AddrPort) bo
 
 	msg := NewGetPeersQuery(is.nodeID, infoHash, is.want)
 	msg.T = t[:]
-	is.protocol.SendMessage(msg, addr)
+	if !is.protocol.SendMessage(msg, addr) {
+		is.requestsMu.Lock()
+		if entry, ok := is.getPeersRequests[t]; ok {
+			is.removeGetPeersRequestLocked(t, entry)
+		}
+		is.requestsMu.Unlock()
+		is.requestsSendDropped.Add(1)
+		return false
+	}
 	return true
 }
 
@@ -568,7 +591,7 @@ func (is *IndexingService) expireOldGetPeersRequestsLocked(now time.Time) {
 	nextExpiry := time.Time{}
 	for t, entry := range is.getPeersRequests {
 		if !entry.createdAt.After(cutoff) {
-			delete(is.getPeersRequests, t)
+			is.removeGetPeersRequestLocked(t, entry)
 			continue
 		}
 		expiresAt := entry.createdAt.Add(getPeersRequestTimeout)
@@ -577,6 +600,17 @@ func (is *IndexingService) expireOldGetPeersRequestsLocked(now time.Time) {
 		}
 	}
 	is.nextRequestExpiry = nextExpiry
+}
+
+func (is *IndexingService) removeGetPeersRequestLocked(t [2]byte, entry getPeersEntry) {
+	delete(is.getPeersRequests, t)
+	hashKey := string(entry.infoHash)
+	count := is.pendingInfoHashes[hashKey]
+	if count <= 1 {
+		delete(is.pendingInfoHashes, hashKey)
+	} else {
+		is.pendingInfoHashes[hashKey] = count - 1
+	}
 }
 
 func (is *IndexingService) pendingGetPeersRequests() int {
@@ -588,6 +622,14 @@ func (is *IndexingService) pendingGetPeersRequests() int {
 
 func (is *IndexingService) rejectedGetPeersRequests() uint64 {
 	return is.requestsRejected.Load()
+}
+
+func (is *IndexingService) dedupedGetPeersRequests() uint64 {
+	return is.requestsDeduped.Load()
+}
+
+func (is *IndexingService) droppedGetPeersSends() uint64 {
+	return is.requestsSendDropped.Load()
 }
 
 func (is *IndexingService) pruneProbeCache() {

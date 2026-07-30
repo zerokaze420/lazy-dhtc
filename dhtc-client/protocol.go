@@ -217,11 +217,11 @@ func (p *Protocol) onMessage(msg *Message, addr netip.AddrPort) {
 }
 
 // SendMessage sends a KRPC message to the specified address.
-func (p *Protocol) SendMessage(msg *Message, addr netip.AddrPort) {
+func (p *Protocol) SendMessage(msg *Message, addr netip.AddrPort) bool {
 	if !p.started {
-		return
+		return false
 	}
-	p.transport.WriteMessages(msg, addr)
+	return p.transport.WriteMessages(msg, addr)
 }
 
 // NewFindNodeQuery creates a new find_node query message.

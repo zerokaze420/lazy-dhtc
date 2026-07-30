@@ -164,20 +164,22 @@ func runWorker(cfg *config.Configuration, bootstrapNodes []string) {
 		queueStats := queue.Stats()
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status":                "ok",
-			"role":                  "worker",
-			"paused":                !crawlerStatus.Running,
-			"discovered":            crawlerStatus.Discovered,
-			"download_succeeded":    crawlerStatus.DownloadSucceeded,
-			"dht_output_dropped":    crawlerStatus.DHTOutputDropped,
-			"pending_get_peers":     crawlerStatus.PendingGetPeers,
-			"get_peers_rejected":    crawlerStatus.GetPeersRejected,
-			"queued":                queueStats.Queued,
-			"queue_dropped":         queueStats.Dropped,
-			"dropped":               queueStats.Dropped,
-			"flushed":               queueStats.Flushed,
-			"flush_batches":         queueStats.FlushBatches,
-			"flush_rate_per_second": queueStats.FlushRatePerSecond,
+			"status":                 "ok",
+			"role":                   "worker",
+			"paused":                 !crawlerStatus.Running,
+			"discovered":             crawlerStatus.Discovered,
+			"download_succeeded":     crawlerStatus.DownloadSucceeded,
+			"dht_output_dropped":     crawlerStatus.DHTOutputDropped,
+			"pending_get_peers":      crawlerStatus.PendingGetPeers,
+			"get_peers_rejected":     crawlerStatus.GetPeersRejected,
+			"get_peers_deduped":      crawlerStatus.GetPeersDeduped,
+			"get_peers_send_dropped": crawlerStatus.GetPeersSendDropped,
+			"queued":                 queueStats.Queued,
+			"queue_dropped":          queueStats.Dropped,
+			"dropped":                queueStats.Dropped,
+			"flushed":                queueStats.Flushed,
+			"flush_batches":          queueStats.FlushBatches,
+			"flush_rate_per_second":  queueStats.FlushRatePerSecond,
 		})
 	})
 	mux.HandleFunc("/api/worker/v1/control", func(w http.ResponseWriter, r *http.Request) {
@@ -237,6 +239,8 @@ func logWorkerMetrics(ctx context.Context, workerID string, crawler *ui.CrawlerM
 	var previousDownloads uint64
 	var previousDHTDropped uint64
 	var previousGetPeersRejected uint64
+	var previousGetPeersDeduped uint64
+	var previousGetPeersSendDropped uint64
 	var previousFlushed uint64
 	for {
 		select {
@@ -262,11 +266,17 @@ func logWorkerMetrics(ctx context.Context, workerID string, crawler *ui.CrawlerM
 			Int("pending_get_peers", crawlerStatus.PendingGetPeers).
 			Uint64("get_peers_rejected", crawlerStatus.GetPeersRejected).
 			Uint64("get_peers_rejected_interval", crawlerStatus.GetPeersRejected-previousGetPeersRejected).
+			Uint64("get_peers_deduped", crawlerStatus.GetPeersDeduped).
+			Uint64("get_peers_deduped_interval", crawlerStatus.GetPeersDeduped-previousGetPeersDeduped).
+			Uint64("get_peers_send_dropped", crawlerStatus.GetPeersSendDropped).
+			Uint64("get_peers_send_dropped_interval", crawlerStatus.GetPeersSendDropped-previousGetPeersSendDropped).
 			Msg("Worker metrics")
 		previousDiscovered = crawlerStatus.Discovered
 		previousDownloads = crawlerStatus.DownloadSucceeded
 		previousDHTDropped = crawlerStatus.DHTOutputDropped
 		previousGetPeersRejected = crawlerStatus.GetPeersRejected
+		previousGetPeersDeduped = crawlerStatus.GetPeersDeduped
+		previousGetPeersSendDropped = crawlerStatus.GetPeersSendDropped
 		previousFlushed = queueStats.Flushed
 	}
 }
