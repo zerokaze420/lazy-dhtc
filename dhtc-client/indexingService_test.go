@@ -113,3 +113,18 @@ func TestRequestPeersReleasesPendingWhenSendQueueIsFull(t *testing.T) {
 		t.Fatalf("dropped send count = %d, want 1", service.droppedGetPeersSends())
 	}
 }
+
+func TestControlMessagesUseDedicatedQueue(t *testing.T) {
+	service := newRequestPeersTestService()
+	for len(service.protocol.transport.sendChan) < cap(service.protocol.transport.sendChan) {
+		service.protocol.transport.sendChan <- sendRequest{}
+	}
+
+	msg := NewSampleInfohashesQuery(service.nodeID, []byte("aa"), make([]byte, 20), service.want)
+	if !service.protocol.SendMessage(msg, netip.MustParseAddrPort("192.0.2.1:6881")) {
+		t.Fatal("control message was blocked by a full get_peers queue")
+	}
+	if got := len(service.protocol.transport.controlChan); got != 1 {
+		t.Fatalf("control queue length = %d, want 1", got)
+	}
+}

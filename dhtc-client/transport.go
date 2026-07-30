@@ -26,13 +26,14 @@ type Transport struct {
 	started bool
 	buffer  []byte
 
-	limiter  *rate.Limiter
-	sendChan chan sendRequest
-	done     chan struct{}
-	stopOnce sync.Once
-	ctx      context.Context
-	cancel   context.CancelFunc
-	group    *errgroup.Group
+	limiter     *rate.Limiter
+	sendChan    chan sendRequest
+	controlChan chan sendRequest
+	done        chan struct{}
+	stopOnce    sync.Once
+	ctx         context.Context
+	cancel      context.CancelFunc
+	group       *errgroup.Group
 
 	// OnMessage is the function that will be called when Transport receives a packet that is
 	// successfully unmarshalled as a syntactically correct Message (but, of course, checking
@@ -64,16 +65,17 @@ func NewTransport(network string, laddr string, rateLimit int, onMessage func(*M
 	if rateLimit > 0 {
 		t.limiter = rate.NewLimiter(rate.Limit(rateLimit), rateLimit)
 	}
-	// Keep queueing delay below the request timeout. A large queue makes a
-	// request expire before it has actually reached the network.
-	queueSize := 256
-	if rateLimit > 0 && rateLimit < queueSize {
-		queueSize = rateLimit
+	// Buffer a few seconds of get_peers bursts while keeping routing maintenance
+	// and protocol replies on a separate queue that discovery traffic cannot fill.
+	queueSize := 768
+	if rateLimit > 0 {
+		queueSize = rateLimit * 3
 	}
 	if queueSize < 1 {
 		queueSize = 1
 	}
 	t.sendChan = make(chan sendRequest, queueSize)
+	t.controlChan = make(chan sendRequest, 256)
 	t.done = make(chan struct{})
 
 	t.laddr = laddr
@@ -104,6 +106,11 @@ func (t *Transport) Start(parent context.Context) {
 	if err != nil {
 		log.Fatal().Msg("Could NOT bind the socket!")
 		log.Fatal().Err(err)
+	}
+	if conn, ok := t.fd.(*net.UDPConn); ok {
+		if err := conn.SetReadBuffer(4 << 20); err != nil {
+			log.Warn().Err(err).Msg("Could NOT increase UDP receive buffer")
+		}
 	}
 
 	t.group.Go(t.readMessages)
@@ -185,10 +192,14 @@ func (t *Transport) readMessages() error {
 
 // WriteMessages writes a KRPC message to the specified address.
 func (t *Transport) WriteMessages(msg *Message, addr netip.AddrPort) bool {
+	queue := t.controlChan
+	if msg.Y == "q" && msg.Q == "get_peers" {
+		queue = t.sendChan
+	}
 	select {
 	case <-t.done:
 		return false
-	case t.sendChan <- sendRequest{msg, addr}:
+	case queue <- sendRequest{msg, addr}:
 		return true
 	default:
 		return false
@@ -197,15 +208,21 @@ func (t *Transport) WriteMessages(msg *Message, addr netip.AddrPort) bool {
 
 func (t *Transport) sendLoop() error {
 	for {
+		// Prefer routing maintenance and replies whenever both queues are ready.
 		select {
 		case <-t.done:
 			return nil
+		case req := <-t.controlChan:
+			t.send(req)
+			continue
+		default:
+		}
+		select {
+		case <-t.done:
+			return nil
+		case req := <-t.controlChan:
+			t.send(req)
 		case req := <-t.sendChan:
-			select {
-			case <-t.done:
-				return nil
-			default:
-			}
 			t.send(req)
 		}
 	}

@@ -16,6 +16,7 @@ BATCH=""
 MAX_DOWNLOADS=""
 MAX_LEECHES=""
 RATE_LIMIT=""
+MAX_NEIGHBORS=""
 MASTER_URL=""
 INSTALL_DIR="/usr/local/bin"
 DATA_DIR="/var/lib/dhtc-worker"
@@ -45,6 +46,7 @@ dhtc Worker 一键安装脚本
   --max-downloads N          元数据下载并发数，默认：自动选择
   --max-leeches N            活跃元数据任务数，默认：自动选择
   --rate-limit N             每个 DHT 网络每秒 UDP 包上限，默认：自动选择
+  --max-neighbors N          每个 DHT 网络维护的邻居上限，默认：自动选择
   --master-url URL           启用 Worker 主动推送模式，填写 Master 地址
 
 安装选项：
@@ -104,6 +106,7 @@ while [ "$#" -gt 0 ]; do
     --max-downloads) need_value "$@"; MAX_DOWNLOADS="$2"; shift 2 ;;
     --max-leeches) need_value "$@"; MAX_LEECHES="$2"; shift 2 ;;
     --rate-limit) need_value "$@"; RATE_LIMIT="$2"; shift 2 ;;
+    --max-neighbors) need_value "$@"; MAX_NEIGHBORS="$2"; shift 2 ;;
     --master-url) need_value "$@"; MASTER_URL="$2"; shift 2 ;;
     --version) need_value "$@"; VERSION="$2"; shift 2 ;;
     --install-dir) need_value "$@"; INSTALL_DIR="$2"; shift 2 ;;
@@ -150,16 +153,16 @@ fi
 
 case "$SELECTED_PROFILE" in
   conservative)
-    DEFAULT_QUEUE=2048; DEFAULT_BATCH=64; DEFAULT_DOWNLOADS=8; DEFAULT_LEECHES=128; DEFAULT_RATE=200
+    DEFAULT_QUEUE=2048; DEFAULT_BATCH=64; DEFAULT_DOWNLOADS=8; DEFAULT_LEECHES=128; DEFAULT_RATE=300; DEFAULT_NEIGHBORS=300
     ;;
   high)
     DEFAULT_QUEUE=8192; DEFAULT_BATCH=64
-    DEFAULT_DOWNLOADS=$((CPU_COUNT * 8)); [ "$DEFAULT_DOWNLOADS" -le 48 ] || DEFAULT_DOWNLOADS=48
+    DEFAULT_DOWNLOADS=$((CPU_COUNT * 8)); [ "$DEFAULT_DOWNLOADS" -le 48 ] || DEFAULT_DOWNLOADS=48; DEFAULT_NEIGHBORS=500
     DEFAULT_LEECHES=$((DEFAULT_DOWNLOADS * 16)); DEFAULT_RATE=$((CPU_COUNT * 150)); [ "$DEFAULT_RATE" -le 1000 ] || DEFAULT_RATE=1000
     ;;
   max)
     DEFAULT_QUEUE=16384; DEFAULT_BATCH=64
-    DEFAULT_DOWNLOADS=$((CPU_COUNT * 12)); [ "$DEFAULT_DOWNLOADS" -le 96 ] || DEFAULT_DOWNLOADS=96
+    DEFAULT_DOWNLOADS=$((CPU_COUNT * 12)); [ "$DEFAULT_DOWNLOADS" -le 96 ] || DEFAULT_DOWNLOADS=96; DEFAULT_NEIGHBORS=750
     DEFAULT_LEECHES=$((DEFAULT_DOWNLOADS * 16)); DEFAULT_RATE=$((CPU_COUNT * 250)); [ "$DEFAULT_RATE" -le 2000 ] || DEFAULT_RATE=2000
     ;;
 esac
@@ -169,8 +172,9 @@ BATCH="${BATCH:-$DEFAULT_BATCH}"
 MAX_DOWNLOADS="${MAX_DOWNLOADS:-$DEFAULT_DOWNLOADS}"
 MAX_LEECHES="${MAX_LEECHES:-$DEFAULT_LEECHES}"
 RATE_LIMIT="${RATE_LIMIT:-$DEFAULT_RATE}"
+MAX_NEIGHBORS="${MAX_NEIGHBORS:-$DEFAULT_NEIGHBORS}"
 
-for value in "$QUEUE" "$BATCH" "$MAX_DOWNLOADS" "$MAX_LEECHES" "$RATE_LIMIT"; do
+for value in "$QUEUE" "$BATCH" "$MAX_DOWNLOADS" "$MAX_LEECHES" "$RATE_LIMIT" "$MAX_NEIGHBORS"; do
   case "$value" in ''|*[!0-9]*) echo "错误：性能参数必须是正整数" >&2; exit 2 ;; esac
   [ "$value" -gt 0 ] || { echo "错误：性能参数必须大于零" >&2; exit 2; }
 done
@@ -268,7 +272,7 @@ User=${SERVICE_USER}
 Group=${SERVICE_USER}
 WorkingDirectory=${DATA_DIR}
 EnvironmentFile=${ENV_FILE}
-ExecStart=${INSTALL_DIR}/dhtc-worker -address ${ADDRESS} -NetworkMode ${NETWORK_MODE} -ListenIPv4 0.0.0.0:${DHT_PORT} -ListenIPv6 [::]:${DHT_PORT} -worker-queue ${QUEUE} -worker-batch ${BATCH} -MaxConcurrentDownloads ${MAX_DOWNLOADS} -MaxLeeches ${MAX_LEECHES} -DrainTimeout 12s -RateLimit ${RATE_LIMIT} -RoutingTableCacheIPv4 ${DATA_DIR}/routing-table-v4.json -RoutingTableCacheIPv6 ${DATA_DIR}/routing-table-v6.json ${PUSH_ARGS}
+ExecStart=${INSTALL_DIR}/dhtc-worker -address ${ADDRESS} -NetworkMode ${NETWORK_MODE} -ListenIPv4 0.0.0.0:${DHT_PORT} -ListenIPv6 [::]:${DHT_PORT} -worker-queue ${QUEUE} -worker-batch ${BATCH} -MaxConcurrentDownloads ${MAX_DOWNLOADS} -MaxLeeches ${MAX_LEECHES} -MaxNeighbors ${MAX_NEIGHBORS} -DrainTimeout 12s -RateLimit ${RATE_LIMIT} -RoutingTableCacheIPv4 ${DATA_DIR}/routing-table-v4.json -RoutingTableCacheIPv6 ${DATA_DIR}/routing-table-v6.json ${PUSH_ARGS}
 Restart=on-failure
 RestartSec=5s
 NoNewPrivileges=true
