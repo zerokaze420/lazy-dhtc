@@ -53,7 +53,7 @@ dhtc Worker 一键安装脚本
   --data-dir PATH            路由表缓存目录，默认：/var/lib/dhtc-worker
   --service-user USER        服务运行用户，默认：dhtc-worker
   --service-name NAME        systemd 服务名称，默认：dhtc-worker
-  --no-open-firewall         不自动放行 Worker TCP 端口
+  --no-open-firewall         不自动放行 Worker TCP 和 DHT UDP 端口
   -h, --help                 显示帮助
 
 示例：

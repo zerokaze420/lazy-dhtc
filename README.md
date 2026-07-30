@@ -213,7 +213,7 @@ Worker 安装脚本默认使用 `--performance auto`，根据 VPS 的在线 CPU 
 
 默认使用 Master 主动拉取模式。传入 `--master-url https://master.example.com` 可启用主动推送：队列达到一个批次时立即发送，并持续排空积压；低流量时最多等待 30 秒。推送队列每 2 秒合并生成一次原子快照，避免逐条 metadata 全量写盘。
 
-安装时脚本会自动通过 `ufw` 或运行中的 `firewalld` 放行 Worker 监听端口（默认 `4200/tcp`）。使用云厂商安全组的 VPS 仍需在控制台放行该端口；若端口由其他方式管理，可传入 `--no-open-firewall` 跳过本机防火墙配置。
+安装时脚本会自动通过 `ufw` 或运行中的 `firewalld` 放行 Worker API（默认 `4200/tcp`）和 DHT（默认 `6881/udp`）端口。使用云厂商安全组的 VPS 仍需在控制台同时放行这两个端口；仅有公网 IPv6 时，应确保 IPv6 入站 `6881/udp` 可达。若端口由其他方式管理，可传入 `--no-open-firewall` 同时跳过 TCP 和 UDP 的本机防火墙配置。
 
 脚本支持直接覆盖安装。再次运行相同安装命令会原子替换 Worker 二进制、更新 systemd 单元并重启服务；已有 Worker ID 和集群 Token 会自动保留，除非显式传入新的 `--worker-id` 或 `--token`。
 
