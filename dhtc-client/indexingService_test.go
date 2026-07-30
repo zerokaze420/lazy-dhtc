@@ -143,3 +143,14 @@ func TestProtocolResponsesUseIndependentQueue(t *testing.T) {
 		t.Fatalf("control queue length = %d, want 0", got)
 	}
 }
+
+func TestTransportSplitsActiveRateLimit(t *testing.T) {
+	transport := NewTransport("udp4", "127.0.0.1:0", 300, func(*Message, netip.AddrPort) {}, func() {})
+
+	if got := int(transport.limiter.Limit()); got != 240 {
+		t.Fatalf("get_peers rate limit = %d, want 240", got)
+	}
+	if got := int(transport.controlLimiter.Limit()); got != 60 {
+		t.Fatalf("control rate limit = %d, want 60", got)
+	}
+}

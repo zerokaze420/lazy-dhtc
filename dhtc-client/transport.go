@@ -27,6 +27,7 @@ type Transport struct {
 	buffer  []byte
 
 	limiter         *rate.Limiter
+	controlLimiter  *rate.Limiter
 	responseLimiter *rate.Limiter
 	sendChan        chan sendRequest
 	controlChan     chan sendRequest
@@ -65,7 +66,16 @@ func NewTransport(network string, laddr string, rateLimit int, onMessage func(*M
 	t.onCongestion = onCongestion
 
 	if rateLimit > 0 {
-		t.limiter = rate.NewLimiter(rate.Limit(rateLimit), rateLimit)
+		controlRate := rateLimit / 5
+		if controlRate < 1 {
+			controlRate = 1
+		}
+		getPeersRate := rateLimit - controlRate
+		if getPeersRate < 1 {
+			getPeersRate = 1
+		}
+		t.limiter = rate.NewLimiter(rate.Limit(getPeersRate), getPeersRate)
+		t.controlLimiter = rate.NewLimiter(rate.Limit(controlRate), controlRate)
 		t.responseLimiter = rate.NewLimiter(rate.Limit(rateLimit), rateLimit)
 	}
 	// Buffer a few seconds of get_peers bursts while keeping routing maintenance
@@ -119,6 +129,7 @@ func (t *Transport) Start(parent context.Context) {
 
 	t.group.Go(t.readMessages)
 	t.group.Go(t.sendLoop)
+	t.group.Go(t.controlLoop)
 	t.group.Go(t.responseLoop)
 }
 
@@ -215,22 +226,22 @@ func (t *Transport) WriteMessages(msg *Message, addr netip.AddrPort) bool {
 
 func (t *Transport) sendLoop() error {
 	for {
-		// Prefer routing maintenance and replies whenever both queues are ready.
 		select {
 		case <-t.done:
 			return nil
-		case req := <-t.controlChan:
-			t.send(req)
-			continue
-		default:
-		}
-		select {
-		case <-t.done:
-			return nil
-		case req := <-t.controlChan:
-			t.send(req)
 		case req := <-t.sendChan:
 			t.send(req)
+		}
+	}
+}
+
+func (t *Transport) controlLoop() error {
+	for {
+		select {
+		case <-t.done:
+			return nil
+		case req := <-t.controlChan:
+			t.sendWithLimiter(req, t.controlLimiter)
 		}
 	}
 }

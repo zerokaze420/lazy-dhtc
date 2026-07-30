@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -63,6 +64,8 @@ type IndexingService struct {
 
 	probeCache   map[netip.Addr]time.Time
 	probeCacheMu sync.Mutex
+
+	nextRoutingTableSave time.Time
 }
 
 type IndexingServiceEventHandlers struct {
@@ -242,6 +245,10 @@ func (is *IndexingService) runMaintenance(nodes []string) {
 	}
 	is.pruneProbeCache()
 	is.expireOldGetPeersRequests()
+	if is.cachePath != "" && !time.Now().Before(is.nextRoutingTableSave) {
+		is.saveRoutingTable()
+		is.nextRoutingTableSave = time.Now().Add(time.Minute)
+	}
 }
 
 type routingCacheEntry struct {
@@ -292,7 +299,25 @@ func (is *IndexingService) saveRoutingTable() {
 	if err != nil {
 		return
 	}
-	if err := os.WriteFile(is.cachePath, data, 0600); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(is.cachePath), ".routing-table-*")
+	if err != nil {
+		log.Warn().Err(err).Str("path", is.cachePath).Msg("Could not create DHT routing table cache")
+		return
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err = tmp.Chmod(0600); err == nil {
+		if _, err = tmp.Write(data); err == nil {
+			err = tmp.Sync()
+		}
+	}
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Rename(tmpPath, is.cachePath)
+	}
+	if err != nil {
 		log.Warn().Err(err).Str("path", is.cachePath).Msg("Could not persist DHT routing table")
 	}
 }
