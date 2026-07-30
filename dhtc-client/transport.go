@@ -26,14 +26,16 @@ type Transport struct {
 	started bool
 	buffer  []byte
 
-	limiter     *rate.Limiter
-	sendChan    chan sendRequest
-	controlChan chan sendRequest
-	done        chan struct{}
-	stopOnce    sync.Once
-	ctx         context.Context
-	cancel      context.CancelFunc
-	group       *errgroup.Group
+	limiter         *rate.Limiter
+	responseLimiter *rate.Limiter
+	sendChan        chan sendRequest
+	controlChan     chan sendRequest
+	responseChan    chan sendRequest
+	done            chan struct{}
+	stopOnce        sync.Once
+	ctx             context.Context
+	cancel          context.CancelFunc
+	group           *errgroup.Group
 
 	// OnMessage is the function that will be called when Transport receives a packet that is
 	// successfully unmarshalled as a syntactically correct Message (but, of course, checking
@@ -64,6 +66,7 @@ func NewTransport(network string, laddr string, rateLimit int, onMessage func(*M
 
 	if rateLimit > 0 {
 		t.limiter = rate.NewLimiter(rate.Limit(rateLimit), rateLimit)
+		t.responseLimiter = rate.NewLimiter(rate.Limit(rateLimit), rateLimit)
 	}
 	// Buffer a few seconds of get_peers bursts while keeping routing maintenance
 	// and protocol replies on a separate queue that discovery traffic cannot fill.
@@ -76,6 +79,7 @@ func NewTransport(network string, laddr string, rateLimit int, onMessage func(*M
 	}
 	t.sendChan = make(chan sendRequest, queueSize)
 	t.controlChan = make(chan sendRequest, 256)
+	t.responseChan = make(chan sendRequest, 256)
 	t.done = make(chan struct{})
 
 	t.laddr = laddr
@@ -115,6 +119,7 @@ func (t *Transport) Start(parent context.Context) {
 
 	t.group.Go(t.readMessages)
 	t.group.Go(t.sendLoop)
+	t.group.Go(t.responseLoop)
 }
 
 // Terminate terminates the DHT transport layer.
@@ -193,7 +198,9 @@ func (t *Transport) readMessages() error {
 // WriteMessages writes a KRPC message to the specified address.
 func (t *Transport) WriteMessages(msg *Message, addr netip.AddrPort) bool {
 	queue := t.controlChan
-	if msg.Y == "q" && msg.Q == "get_peers" {
+	if msg.Y != "q" {
+		queue = t.responseChan
+	} else if msg.Q == "get_peers" {
 		queue = t.sendChan
 	}
 	select {
@@ -228,9 +235,24 @@ func (t *Transport) sendLoop() error {
 	}
 }
 
+func (t *Transport) responseLoop() error {
+	for {
+		select {
+		case <-t.done:
+			return nil
+		case req := <-t.responseChan:
+			t.sendWithLimiter(req, t.responseLimiter)
+		}
+	}
+}
+
 func (t *Transport) send(req sendRequest) {
-	if t.limiter != nil {
-		if err := t.limiter.Wait(t.ctx); err != nil {
+	t.sendWithLimiter(req, t.limiter)
+}
+
+func (t *Transport) sendWithLimiter(req sendRequest, limiter *rate.Limiter) {
+	if limiter != nil {
+		if err := limiter.Wait(t.ctx); err != nil {
 			return
 		}
 	}

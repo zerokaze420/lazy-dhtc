@@ -128,3 +128,18 @@ func TestControlMessagesUseDedicatedQueue(t *testing.T) {
 		t.Fatalf("control queue length = %d, want 1", got)
 	}
 }
+
+func TestProtocolResponsesUseIndependentQueue(t *testing.T) {
+	service := newRequestPeersTestService()
+	msg := NewBasicResponse([]byte("aa"), service.nodeID)
+
+	if !service.protocol.SendMessage(msg, netip.MustParseAddrPort("192.0.2.1:6881")) {
+		t.Fatal("protocol response was not queued")
+	}
+	if got := len(service.protocol.transport.responseChan); got != 1 {
+		t.Fatalf("response queue length = %d, want 1", got)
+	}
+	if got := len(service.protocol.transport.controlChan); got != 0 {
+		t.Fatalf("control queue length = %d, want 0", got)
+	}
+}
