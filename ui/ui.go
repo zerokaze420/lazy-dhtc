@@ -121,6 +121,7 @@ func RunWebServer(configuration *config.Configuration, database db.Repository, h
 	srv.GET("/download/aria2", uiCtrl.SendToAria2)
 	srv.GET("/download/deluge", uiCtrl.SendToDeluge)
 	srv.GET("/download/qbittorrent", uiCtrl.SendToQBittorrent)
+	srv.POST("/download/test/:service", uiCtrl.TestDownloader)
 
 	srv.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})

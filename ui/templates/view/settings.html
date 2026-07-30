@@ -128,7 +128,7 @@
       </div>
     </div>
 
-    <form action="/settings" method="POST" class="contents">
+    <form id="settings-form" action="/settings" method="POST" class="contents">
       <input type="hidden" name="ListenIPv4" value="{{ .config.ListenIPv4 }}" />
       <input type="hidden" name="ListenIPv6" value="{{ .config.ListenIPv6 }}" />
       <input type="hidden" name="RoutingTableCacheIPv4" value="{{ .config.RoutingTableCacheIPv4 }}" />
@@ -593,6 +593,10 @@
                     />
                   </div>
                 </div>
+                <div class="mt-4 flex items-center gap-3">
+                  <button type="button" class="btn btn-outline btn-sm" onclick="testDownloader('transmission', this)">{{ t .lang "test_connection" }}</button>
+                  <span id="transmission-test-status" class="text-sm"></span>
+                </div>
               </div>
             </div>
 
@@ -629,6 +633,10 @@
                     class="input input-bordered w-full"
                   />
                 </div>
+                <div class="mt-4 flex items-center gap-3">
+                  <button type="button" class="btn btn-outline btn-sm" onclick="testDownloader('aria2', this)">{{ t .lang "test_connection" }}</button>
+                  <span id="aria2-test-status" class="text-sm"></span>
+                </div>
               </div>
             </div>
 
@@ -664,6 +672,10 @@
                     value="{{ .config.DelugePass }}"
                     class="input input-bordered w-full"
                   />
+                </div>
+                <div class="mt-4 flex items-center gap-3">
+                  <button type="button" class="btn btn-outline btn-sm" onclick="testDownloader('deluge', this)">{{ t .lang "test_connection" }}</button>
+                  <span id="deluge-test-status" class="text-sm"></span>
                 </div>
               </div>
             </div>
@@ -714,6 +726,10 @@
                       class="input input-bordered w-full"
                     />
                   </div>
+                </div>
+                <div class="mt-4 flex items-center gap-3">
+                  <button type="button" class="btn btn-outline btn-sm" onclick="testDownloader('qbittorrent', this)">{{ t .lang "test_connection" }}</button>
+                  <span id="qbittorrent-test-status" class="text-sm"></span>
                 </div>
               </div>
             </div>
@@ -896,4 +912,27 @@
     </div>
   </div>
 </div>
+<script>
+  async function testDownloader(service, button) {
+    const form = document.getElementById("settings-form");
+    const status = document.getElementById(`${service}-test-status`);
+    button.disabled = true;
+    status.className = "text-sm text-base-content/60";
+    status.textContent = "{{ t .lang "testing_connection" }}";
+    try {
+      const response = await fetch(`/download/test/${service}`, {
+        method: "POST",
+        body: new FormData(form),
+      });
+      const data = await response.json();
+      status.className = response.ok ? "text-sm text-success" : "text-sm text-error";
+      status.textContent = response.ok ? "{{ t .lang "connection_successful" }}" : data.error;
+    } catch (error) {
+      status.className = "text-sm text-error";
+      status.textContent = error;
+    } finally {
+      button.disabled = false;
+    }
+  }
+</script>
 {{ end }}

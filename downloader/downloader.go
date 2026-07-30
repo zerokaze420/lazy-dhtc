@@ -6,11 +6,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
 type Client interface {
 	AddMagnet(magnet string) error
+}
+
+type TestableClient interface {
+	Client
+	TestConnection() error
 }
 
 type TransmissionClient struct {
@@ -20,6 +27,11 @@ type TransmissionClient struct {
 	SessionID string
 }
 
+func (c *TransmissionClient) TestConnection() error {
+	payload := map[string]any{"method": "session-get"}
+	return c.call(payload)
+}
+
 func (c *TransmissionClient) AddMagnet(magnet string) error {
 	payload := map[string]any{
 		"method": "torrent-add",
@@ -27,7 +39,10 @@ func (c *TransmissionClient) AddMagnet(magnet string) error {
 			"filename": magnet,
 		},
 	}
+	return c.call(payload)
+}
 
+func (c *TransmissionClient) call(payload map[string]any) error {
 	for range 2 {
 		err := func() error {
 			body, _ := json.Marshal(payload)
@@ -81,22 +96,31 @@ type Aria2Client struct {
 	Token string
 }
 
+func (c *Aria2Client) TestConnection() error {
+	return c.call("aria2.getVersion", nil)
+}
+
 func (c *Aria2Client) AddMagnet(magnet string) error {
+	return c.call("aria2.addUri", []any{[]string{magnet}})
+}
+
+func (c *Aria2Client) call(method string, methodParams []any) error {
 	var params []any
 	if c.Token != "" {
 		params = append(params, "token:"+c.Token)
 	}
-	params = append(params, []string{magnet})
+	params = append(params, methodParams...)
 
 	payload := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      "dhtc",
-		"method":  "aria2.addUri",
+		"method":  method,
 		"params":  params,
 	}
 
 	body, _ := json.Marshal(payload)
-	resp, err := http.Post(c.URL, "application/json", bytes.NewBuffer(body))
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(c.URL, "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
@@ -105,6 +129,15 @@ func (c *Aria2Client) AddMagnet(magnet string) error {
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("aria2 returned status %d: %s", resp.StatusCode, string(b))
+	}
+	var result struct {
+		Error json.RawMessage `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("aria2 returned an invalid response: %w", err)
+	}
+	if len(result.Error) > 0 && string(result.Error) != "null" {
+		return fmt.Errorf("aria2 RPC error: %s", result.Error)
 	}
 
 	return nil
@@ -115,36 +148,21 @@ type DelugeClient struct {
 	Pass string
 }
 
+func (c *DelugeClient) TestConnection() error {
+	_, err := c.login()
+	return err
+}
+
 func (c *DelugeClient) AddMagnet(magnet string) error {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
-
-	// 1. Login
-	loginPayload := map[string]any{
-		"id":     1,
-		"method": "auth.login",
-		"params": []string{c.Pass},
-	}
-	loginBody, _ := json.Marshal(loginPayload)
-	resp, err := client.Post(c.URL, "application/json", bytes.NewBuffer(loginBody))
+	cookies, err := c.login()
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("deluge login failed with status %d", resp.StatusCode)
-	}
-
-	var cookies []*http.Cookie
-	for _, cookie := range resp.Cookies() {
-		if cookie.Name == "_session_id" {
-			cookies = append(cookies, cookie)
-		}
-	}
-
-	// 2. Add magnet
+	// Add magnet with the authenticated Deluge session.
 	addPayload := map[string]any{
 		"id":     2,
 		"method": "core.add_torrent_magnet",
@@ -160,7 +178,7 @@ func (c *DelugeClient) AddMagnet(magnet string) error {
 		req.AddCookie(cookie)
 	}
 
-	resp, err = client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -173,40 +191,84 @@ func (c *DelugeClient) AddMagnet(magnet string) error {
 	return nil
 }
 
+func (c *DelugeClient) login() ([]*http.Cookie, error) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	loginPayload := map[string]any{
+		"id":     1,
+		"method": "auth.login",
+		"params": []string{c.Pass},
+	}
+	loginBody, _ := json.Marshal(loginPayload)
+	resp, err := client.Post(c.URL, "application/json", bytes.NewBuffer(loginBody))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("deluge login failed with status %d", resp.StatusCode)
+	}
+	var loginResult struct {
+		Result bool            `json:"result"`
+		Error  json.RawMessage `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&loginResult); err != nil {
+		return nil, fmt.Errorf("deluge returned an invalid login response: %w", err)
+	}
+	if len(loginResult.Error) > 0 && string(loginResult.Error) != "null" {
+		return nil, fmt.Errorf("deluge login error: %s", loginResult.Error)
+	}
+	if !loginResult.Result {
+		return nil, fmt.Errorf("deluge authentication failed")
+	}
+
+	var cookies []*http.Cookie
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == "_session_id" {
+			cookies = append(cookies, cookie)
+		}
+	}
+
+	return cookies, nil
+}
+
 type QBittorrentClient struct {
 	URL  string
 	User string
 	Pass string
 }
 
-func (c *QBittorrentClient) AddMagnet(magnet string) error {
-	client := &http.Client{
-		Timeout: 10 * time.Second,
+func (c *QBittorrentClient) TestConnection() error {
+	client, cookies, err := c.login()
+	if err != nil {
+		return err
 	}
-
-	// 1. Login
-	loginURL := fmt.Sprintf("%s/api/v2/auth/login", c.URL)
-	loginData := fmt.Sprintf("username=%s&password=%s", c.User, c.Pass)
-	resp, err := client.Post(loginURL, "application/x-www-form-urlencoded", bytes.NewBufferString(loginData))
+	req, err := http.NewRequest("GET", strings.TrimRight(c.URL, "/")+"/api/v2/app/version", nil)
+	if err != nil {
+		return err
+	}
+	for _, cookie := range cookies {
+		req.AddCookie(cookie)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("qbittorrent login failed with status %d", resp.StatusCode)
+		return fmt.Errorf("qbittorrent version check failed with status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *QBittorrentClient) AddMagnet(magnet string) error {
+	client, cookies, err := c.login()
+	if err != nil {
+		return err
 	}
 
-	var cookies []*http.Cookie
-	for _, cookie := range resp.Cookies() {
-		if cookie.Name == "SID" {
-			cookies = append(cookies, cookie)
-		}
-	}
-
-	// 2. Add magnet
-	addURL := fmt.Sprintf("%s/api/v2/torrents/add", c.URL)
-	addData := fmt.Sprintf("urls=%s", magnet)
+	addURL := strings.TrimRight(c.URL, "/") + "/api/v2/torrents/add"
+	addData := url.Values{"urls": []string{magnet}}.Encode()
 	req, err := http.NewRequest("POST", addURL, bytes.NewBufferString(addData))
 	if err != nil {
 		return err
@@ -216,7 +278,7 @@ func (c *QBittorrentClient) AddMagnet(magnet string) error {
 		req.AddCookie(cookie)
 	}
 
-	resp, err = client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -227,4 +289,29 @@ func (c *QBittorrentClient) AddMagnet(magnet string) error {
 	}
 
 	return nil
+}
+
+func (c *QBittorrentClient) login() (*http.Client, []*http.Cookie, error) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	loginURL := strings.TrimRight(c.URL, "/") + "/api/v2/auth/login"
+	loginData := url.Values{"username": []string{c.User}, "password": []string{c.Pass}}.Encode()
+	resp, err := client.Post(loginURL, "application/x-www-form-urlencoded", bytes.NewBufferString(loginData))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	if resp.StatusCode != http.StatusOK || strings.TrimSpace(string(responseBody)) != "Ok." {
+		return nil, nil, fmt.Errorf("qbittorrent authentication failed")
+	}
+	var cookies []*http.Cookie
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == "SID" {
+			cookies = append(cookies, cookie)
+		}
+	}
+	if len(cookies) == 0 {
+		return nil, nil, fmt.Errorf("qbittorrent login did not return a session")
+	}
+	return client, cookies, nil
 }

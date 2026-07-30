@@ -14,23 +14,34 @@ func (c *Controller) SettingsGet(ctx *gin.Context) {
 }
 
 func (c *Controller) SettingsPost(ctx *gin.Context) {
-	if err := ctx.ShouldBind(c.Configuration); err != nil {
+	candidate := *c.Configuration
+	if err := ctx.ShouldBind(&candidate); err != nil {
 		h := c.getCommonH(ctx)
+		h["config"] = &candidate
 		h["error"] = err.Error()
 		ctx.HTML(http.StatusBadRequest, "settings", h)
 		return
 	}
-	c.Configuration.NetworkMode = config.NormalizeNetworkMode(c.Configuration.NetworkMode)
-	if c.Configuration.CrawlerScheduleEnabled {
-		start, startErr := time.Parse("15:04", c.Configuration.CrawlerScheduleStart)
-		end, endErr := time.Parse("15:04", c.Configuration.CrawlerScheduleEnd)
+	candidate.NetworkMode = config.NormalizeNetworkMode(candidate.NetworkMode)
+	if candidate.CrawlerScheduleEnabled {
+		start, startErr := time.Parse("15:04", candidate.CrawlerScheduleStart)
+		end, endErr := time.Parse("15:04", candidate.CrawlerScheduleEnd)
 		if startErr != nil || endErr != nil || start.Equal(end) {
 			h := c.getCommonH(ctx)
+			h["config"] = &candidate
 			h["error"] = "定时捕获的开始和停止时间必须有效且不能相同"
 			ctx.HTML(http.StatusBadRequest, "settings", h)
 			return
 		}
 	}
+	if err := testConfiguredDownloaders(&candidate); err != nil {
+		h := c.getCommonH(ctx)
+		h["config"] = &candidate
+		h["error"] = err.Error()
+		ctx.HTML(http.StatusBadRequest, "settings", h)
+		return
+	}
+	*c.Configuration = candidate
 	if c.Notifier != nil {
 		c.Notifier.Setup(c.Configuration)
 	}
