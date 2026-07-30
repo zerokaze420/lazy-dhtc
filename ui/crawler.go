@@ -325,6 +325,8 @@ func (m *CrawlerManager) crawl(stop <-chan struct{}, threads int) {
 				if !metadataSink.Sink(result) {
 					cache.InfoHashCacheRemove(string(hash))
 				}
+			} else {
+				metadataSink.AddPeers(result)
 			}
 		case md, ok := <-metadataSink.Drain():
 			if !ok {

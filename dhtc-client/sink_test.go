@@ -56,3 +56,26 @@ func TestSinkDiscardsInfoHashAfterFinalPeerFailure(t *testing.T) {
 		t.Fatal("final peer failure did not discard info hash")
 	}
 }
+
+func TestSinkAddsNewPeersToActiveDownload(t *testing.T) {
+	infoHash := []byte("12345678901234567890")
+	first := netip.MustParseAddrPort("127.0.0.1:1")
+	second := netip.MustParseAddrPort("127.0.0.1:2")
+	sink := NewSink(time.Minute, 1, 1, nil)
+	defer sink.Terminate()
+	sink.incomingInfoHashes[string(infoHash)] = nil
+	sink.incomingFamilies[string(infoHash)] = 4
+	sink.incomingPeers[string(infoHash)] = peerSet([]netip.AddrPort{first})
+
+	result := sinkTestResult{infoHash: infoHash, peers: []netip.AddrPort{first, second, second}}
+	if !sink.AddPeers(result) {
+		t.Fatal("new peer was not added to active download")
+	}
+	peers := sink.incomingInfoHashes[string(infoHash)]
+	if len(peers) != 1 || peers[0] != second {
+		t.Fatalf("queued peers = %v, want [%v]", peers, second)
+	}
+	if sink.AddPeers(result) {
+		t.Fatal("duplicate peers were added twice")
+	}
+}

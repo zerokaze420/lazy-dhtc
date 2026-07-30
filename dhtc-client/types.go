@@ -83,6 +83,7 @@ type Sink struct {
 
 	incomingInfoHashes   map[string][]netip.AddrPort
 	incomingFamilies     map[string]int
+	incomingPeers        map[string]map[netip.AddrPort]struct{}
 	incomingInfoHashesMx sync.Mutex
 
 	terminated  atomic.Bool
