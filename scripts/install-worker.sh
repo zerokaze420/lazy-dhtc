@@ -4,6 +4,7 @@ set -eu
 REPO="zerokaze420/lazy-dhtc"
 VERSION="latest"
 ADDRESS="0.0.0.0:4200"
+DHT_PORT="6881"
 WORKER_ID=""
 TOKEN=""
 WORKER_ID_EXPLICIT=false
@@ -31,6 +32,7 @@ dhtc Worker 一键安装脚本
 
 连接选项：
   --address HOST:PORT        Worker HTTP 监听地址，默认：0.0.0.0:4200
+  --dht-port PORT            IPv4/IPv6 DHT UDP 监听端口，默认：6881
   --worker-id ID             Master 界面显示的 Worker 名称，默认：自动生成并保留
   --token TOKEN              Master 与 Worker 共享密钥，默认：自动生成并保留
   --network-mode MODE        DHT 网络模式：dual 或 ipv4，默认：dual
@@ -91,6 +93,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --token) need_value "$@"; TOKEN="$2"; TOKEN_EXPLICIT=true; shift 2 ;;
     --address) need_value "$@"; ADDRESS="$2"; shift 2 ;;
+    --dht-port) need_value "$@"; DHT_PORT="$2"; shift 2 ;;
     --worker-id) need_value "$@"; WORKER_ID="$2"; WORKER_ID_EXPLICIT=true; shift 2 ;;
     --network-mode) need_value "$@"; NETWORK_MODE="$2"; shift 2 ;;
     --performance) need_value "$@"; PERFORMANCE="$2"; shift 2 ;;
@@ -119,6 +122,8 @@ case "$ADDRESS" in *:*) ;; *) echo "错误：--address 必须使用 HOST:PORT �
 PORT="${ADDRESS##*:}"
 case "$PORT" in ''|*[!0-9]*) echo "错误：--address 的端口必须是数字" >&2; exit 2 ;; esac
 [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || { echo "错误：端口必须在 1 到 65535 之间" >&2; exit 2; }
+case "$DHT_PORT" in ''|*[!0-9]*) echo "错误：--dht-port 必须是数字" >&2; exit 2 ;; esac
+[ "$DHT_PORT" -ge 1 ] && [ "$DHT_PORT" -le 65535 ] || { echo "错误：DHT 端口必须在 1 到 65535 之间" >&2; exit 2; }
 
 CPU_COUNT="$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)"
 case "$CPU_COUNT" in ''|*[!0-9]*) CPU_COUNT=1 ;; esac
@@ -254,7 +259,7 @@ User=${SERVICE_USER}
 Group=${SERVICE_USER}
 WorkingDirectory=${DATA_DIR}
 EnvironmentFile=${ENV_FILE}
-ExecStart=${INSTALL_DIR}/dhtc-worker -address ${ADDRESS} -NetworkMode ${NETWORK_MODE} -worker-queue ${QUEUE} -worker-batch ${BATCH} -MaxConcurrentDownloads ${MAX_DOWNLOADS} -MaxLeeches ${MAX_LEECHES} -RateLimit ${RATE_LIMIT} -RoutingTableCacheIPv4 ${DATA_DIR}/routing-table-v4.json -RoutingTableCacheIPv6 ${DATA_DIR}/routing-table-v6.json
+ExecStart=${INSTALL_DIR}/dhtc-worker -address ${ADDRESS} -NetworkMode ${NETWORK_MODE} -ListenIPv4 0.0.0.0:${DHT_PORT} -ListenIPv6 [::]:${DHT_PORT} -worker-queue ${QUEUE} -worker-batch ${BATCH} -MaxConcurrentDownloads ${MAX_DOWNLOADS} -MaxLeeches ${MAX_LEECHES} -RateLimit ${RATE_LIMIT} -RoutingTableCacheIPv4 ${DATA_DIR}/routing-table-v4.json -RoutingTableCacheIPv6 ${DATA_DIR}/routing-table-v6.json
 Restart=on-failure
 RestartSec=5s
 NoNewPrivileges=true
@@ -276,11 +281,13 @@ FIREWALL_STATUS="未管理"
 if [ "$OPEN_FIREWALL" = true ]; then
   if command -v ufw >/dev/null 2>&1; then
     ufw allow "${PORT}/tcp"
-    FIREWALL_STATUS="ufw 已放行 ${PORT}/tcp"
+    ufw allow "${DHT_PORT}/udp"
+    FIREWALL_STATUS="ufw 已放行 ${PORT}/tcp、${DHT_PORT}/udp"
   elif command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then
     firewall-cmd --permanent --add-port="${PORT}/tcp"
+    firewall-cmd --permanent --add-port="${DHT_PORT}/udp"
     firewall-cmd --reload
-    FIREWALL_STATUS="firewalld 已放行 ${PORT}/tcp"
+    FIREWALL_STATUS="firewalld 已放行 ${PORT}/tcp、${DHT_PORT}/udp"
   else
     FIREWALL_STATUS="未检测到启用的 ufw/firewalld"
   fi
@@ -315,6 +322,7 @@ printf '│  二进制       │ %s\n' "${INSTALL_DIR}/dhtc-worker"
 printf '│  数据目录     │ %s\n' "${DATA_DIR}"
 printf '│  systemd 服务 │ %s.service\n' "${SERVICE_NAME}"
 printf '│  监听地址     │ %s\n' "${ADDRESS}"
+printf '│  DHT UDP 端口 │ %s\n' "${DHT_PORT}"
 printf '│  防火墙       │ %s\n' "${FIREWALL_STATUS}"
 echo "│"
 echo "├─ 性能配置"
@@ -331,6 +339,6 @@ echo "│"
 echo "└─ 安装成功，服务已启动"
 echo
 echo "请将 Worker URL 和集群密钥填写到 Master 的 Worker 设置中。"
-echo "如 VPS 启用了云安全组，还需在云平台控制台放行 ${PORT}/tcp。"
+echo "如 VPS 启用了云安全组，还需在云平台控制台放行 ${PORT}/tcp 和 ${DHT_PORT}/udp（IPv4/IPv6）。"
 echo "查看状态：systemctl status ${SERVICE_NAME}"
 echo "实时日志：journalctl -u ${SERVICE_NAME} -f"
